@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
+<meta name="theme-color" content="#F3EEFF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="创作台">
+<meta name="description" content="自媒体个人工作台 · 每日选题 / 爆款文案 / 搞钱项目 / 成长打卡">
+<title>我的小工作台 · 自媒体</title>
+<!-- 托管网关对子路径做鉴权，浏览器抓 manifest 时不带 cookie，故必须把 sharecode 带在 URL 上 -->
+<link rel="manifest" href="manifest.json?sharecode=KLEYZT3KBE">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- 左侧菜单 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-emoji">🌸</span>
+      <div class="brand-text">
+        <b>我的小工作台</b>
+        <small id="brandDate">—</small>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <a class="nav-item" data-view="home"><span class="ico">🏠</span><span>首页选题</span></a>
+      <a class="nav-item" data-view="write"><span class="ico">✍️</span><span>写文案</span></a>
+      <a class="nav-item" data-view="money"><span class="ico">💰</span><span>搞钱项目</span></a>
+      <a class="nav-item" data-view="praise"><span class="ico">🌸</span><span>赞美日记</span></a>
+      <a class="nav-item" data-view="soul"><span class="ico">🍃</span><span>心灵感悟</span></a>
+      <a class="nav-item" data-view="plan"><span class="ico">🌱</span><span>成长计划</span></a>
+      <a class="nav-item" data-view="posts"><span class="ico">📤</span><span>发布记录</span></a>
+      <a class="nav-item" data-view="books"><span class="ico">📚</span><span>读书</span></a>
+      <a class="nav-item" data-view="skills"><span class="ico">🎯</span><span>技能学习</span></a>
+      <a class="nav-item" data-view="docs"><span class="ico">📄</span><span>我的文档</span></a>
+      <a class="nav-item" data-view="settings"><span class="ico">⚙️</span><span>设置</span></a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="sync-dot" id="syncDot">●</div>
+      <span id="syncText">正在检查更新…</span>
+    </div>
+  </aside>
+
+  <div class="scrim" id="scrim"></div>
+
+  <!-- 右侧内容 -->
+  <main class="main">
+    <header class="topbar">
+      <button class="hamburger" id="hamburger" aria-label="菜单">☰</button>
+      <h1 id="viewTitle">首页选题</h1>
+      <button class="topbar-btn" id="quickBtn" title="新建">＋</button>
+    </header>
+    <div class="view" id="view"></div>
+  </main>
+
+  <!-- 手机底部栏 -->
+  <nav class="tabbar" id="tabbar">
+    <a data-view="home"><span>🏠</span><i>选题</i></a>
+    <a data-view="write"><span>✍️</span><i>写文案</i></a>
+    <a data-view="money"><span>💰</span><i>搞钱</i></a>
+    <a data-view="docs"><span>📄</span><i>文档</i></a>
+    <a data-view="plan"><span>🌱</span><i>成长</i></a>
+  </nav>
+
+</div>
+
+<!-- 通用弹层 -->
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modalTitle">标题</h3>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/store.js"></script>
+<script src="assets/js/generator.js"></script>
+<script src="assets/js/sensitive.js"></script>
+<script src="assets/js/views.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

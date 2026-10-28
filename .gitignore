@@ -1,0 +1,24 @@
+# 部署平台生成的标记文件（含 appId，不应随代码走）
+.wbapp_*.genie
+
+# WorkBuddy 本地项目数据
+.workbuddy/
+
+# 二维码图里含分享码，不公开
+扫码打开.png
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+_shots/
+*.tmp

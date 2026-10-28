@@ -1,0 +1,13 @@
+{
+  "name": "selfmedia-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "自媒体个人工作台 · 每日选题 / 爆款文案 / 搞钱项目 / 成长打卡",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
