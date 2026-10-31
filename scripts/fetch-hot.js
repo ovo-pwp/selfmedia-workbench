@@ -91,12 +91,25 @@ const BOOST = [
 /* 美妆梗 / 明星同款 / 穿搭种草：热榜常客，但普通人做不出差异化，且极易撞车 */
 const BEAUTY_NOISE = /(妆|妆容|口红|眼影|粉底|腮红|美甲|发型|卷发|染发|穿搭|同款|种草|安利|显白|显瘦|氛围感|出片|拍照姿势|滤镜|香颂|可可|氛围美人|变美|逆袭变美|颜值|素颜|护肤|面膜|精华|水乳|遮瑕|高光|修容)/;
 
+/* 人物八卦 / 网红事件 / 撞脸奇闻：热度高但空心，普通人写不出差异化，
+ * 而且这类内容生命周期极短（三天就没人搜了），不值得我们花时间做稿。
+ */
+const GOSSIP = /(撞脸|神似|翻版|长得像|酷似|现身|露面|偶遇|被偶遇|疑似|疑似恋情|恋情|复合|绯闻|包养|私生|粉丝|追星|接机|打卡|探店|网红|博主|主播|直播带货|塌房|人设|翻车|走红|爆红|一夜成名|回应争议|发文|发声|自曝|首谈|泪崩|破防|崩溃大哭|回忆|怀念|小时候的|亡母|已故|追忆)/;
+
 // 明显是广告 / 平台活动 / 无信息量的词
 const NOISE = /(大赏|挑战赛|小赛|收藏赛|征集|投票|直播预告|开播|抽奖|福利|优惠|补贴|券|活动|报名|招募|上新|首发|预售|官宣|定档|预告|花絮|片单|OST|主题曲|演唱会|巡演|路透|生图|机场|同框|合作曲|联名|瓜分|抢购|秒杀|下单|满减|旗舰店|买一送一|直播间|抽好礼|免费领)/;
 
 function scoreWord(word) {
   let score = 0;
   const hits = [];
+
+  /* 「如何看待 X」「为什么 X」这类追问结构，本身就是一个可写的选题 ——
+   * 它把热点从「事件」变成了「议题」，是内容创作者最该抓的形态。
+   * 给一个底盘分，避免被后面的负向规则叠死。
+   */
+  const isIssue = /^(如何看待|怎么看待|如何评价|怎么评价|为什么|为何|该不该|要不要|是否|凭什么)/.test(word)
+    || /(该怎么|合理吗|正常吗|值得吗)$/.test(word);
+  if (isIssue) { score += 18; hits.push('议题结构'); }
   for (const [re, w] of BOOST) {
     if (re.test(word)) { score += w; hits.push(w); }
   }
@@ -113,6 +126,12 @@ function scoreWord(word) {
   if (BEAUTY_NOISE.test(word)) {
     const practical = /平价|平替|省钱|学生党|上班族|通勤|不化妆|素颜霜|懒人/.test(word);
     score -= practical ? 10 : 40;
+  }
+  // 人物八卦：除非它被明确提问成一个可讨论的议题（"如何看待…""为什么…"），
+  // 那就不是一个八卦，而是一个社会现象——这种反而是好选题，连惩罚都不给。
+  if (GOSSIP.test(word)) {
+    const discussable = /为什么|该不该|要不要|如何看待|怎么看待|是否|合理吗|正常吗|凭什么/.test(word);
+    if (!discussable) score -= 50;
   }
   if (word.length < 5) score -= 8;
   // 知乎类长标题（"如何看待…"）反而是好选题，放宽惩罚阈值
@@ -283,7 +302,7 @@ async function fetchAll() {
   };
 }
 
-module.exports = { fetchAll, buildPicks, request, BLOCK, BRAND, BEAUTY_NOISE, LOW_VALUE, NOISE, scoreWord };
+module.exports = { fetchAll, buildPicks, request, BLOCK, BRAND, BEAUTY_NOISE, GOSSIP, LOW_VALUE, NOISE, scoreWord };
 
 if (require.main === module) {
   fetchAll().then((d) => {

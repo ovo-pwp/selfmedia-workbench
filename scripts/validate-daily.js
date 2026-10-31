@@ -18,12 +18,20 @@ const PLATFORMS = ['gongzhonghao', 'xiaohongshu', 'shipinhao', 'douyin'];
 const MAX_TITLES = 6;
 const MIN_TITLES = 3;
 
-/* 平台正文的合理字数区间（口播稿含标记，区间放宽） */
+/* 平台正文的合理字数区间（口播稿含标记，区间放宽）
+ * 观察评论类要点是「判断」而不是「动作清单」，天然比方法论短，单独给一套下限。
+ */
 const LEN_RANGE = {
   gongzhonghao: [420, 1600],
   xiaohongshu: [220, 900],
   shipinhao: [180, 1200],
   douyin: [180, 1200],
+};
+const LEN_RANGE_COMMENT = {
+  gongzhonghao: [300, 1600],
+  xiaohongshu: [180, 900],
+  shipinhao: [150, 1200],
+  douyin: [150, 1200],
 };
 
 /* 合规严重度分级：按平台真实执法力度，不是按广告法条文
@@ -96,7 +104,7 @@ function declaredPoints(title) {
 function err(list, path, msg) { list.push({ level: 'error', path, msg }); }
 function warn(list, path, msg) { list.push({ level: 'warn', path, msg }); }
 
-function checkCopy(list, path, copy, platform, source) {
+function checkCopy(list, path, copy, platform, source, mode) {
   if (!copy || typeof copy !== 'object') { err(list, path, '缺少成稿'); return; }
 
   /* 模板稿字数天然偏短（骨架稿），把下限降到人稿的 65%，但报警告提醒扩写 */
@@ -125,7 +133,8 @@ function checkCopy(list, path, copy, platform, source) {
     err(list, path + '.body', '正文为空');
     return;
   }
-  const [lo, hi] = LEN_RANGE[platform] || [200, 2000];
+  const range = (mode === 'comment' ? LEN_RANGE_COMMENT : LEN_RANGE);
+  const [lo, hi] = range[platform] || [200, 2000];
   const n = body.length;
   if (n < lo * lenScale) {
     err(list, path + '.body', `正文 ${n} 字，低于 ${platform} 的下限 ${Math.round(lo * lenScale)} 字`);
@@ -238,7 +247,7 @@ function validateShipped(obj) {
       } else {
         for (const pl of (t.platforms || [])) {
           if (!t.copies[pl]) err(list, `${p}.copies.${pl}`, '声明了该平台但没有成稿');
-          else checkCopy(list, `${p}.copies.${pl}`, t.copies[pl], pl, t.source);
+          else checkCopy(list, `${p}.copies.${pl}`, t.copies[pl], pl, t.source, t.mode);
         }
         for (const pl of Object.keys(t.copies)) {
           if (!PLATFORMS.includes(pl)) err(list, `${p}.copies.${pl}`, `未知平台 ${pl}`);
@@ -312,7 +321,7 @@ function format(list) {
 
 module.exports = {
   validate, validateShipped, checkCopy, countItems, declaredPoints,
-  detectAI, summarize, format, PLATFORMS, LEN_RANGE, BLOCK_CATS,
+  detectAI, summarize, format, PLATFORMS, LEN_RANGE, LEN_RANGE_COMMENT, BLOCK_CATS,
 };
 
 if (require.main === module) {

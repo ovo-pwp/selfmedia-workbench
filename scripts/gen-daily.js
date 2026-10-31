@@ -261,6 +261,7 @@ async function run(opts) {
       heat,
       tags: tagSet.slice(0, 6),
       platforms,
+      mode: sec.mode,
       copies,
       source: 'template',
       from: p.platform || 'hot',

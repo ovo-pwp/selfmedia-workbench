@@ -77,11 +77,70 @@ test('正文：素材库内容会被插进去', () => {
   assert.ok(r.body.includes(story), '真实经历没进正文');
 });
 
-test('赛道识别：能认出错配的情况（回归已知缺陷）', () => {
-  // 「10元快剪」属于消费观察，SECTORS 里没有这个赛道 → 现在会掉进 growth 兜底
-  // 这个测试固定住现状，等修好 SECTORS 后应改成期望「消费观察」
+test('赛道识别：消费观察 / 社会话题不再掉进「自我成长」兜底', () => {
+  const cases = {
+    '10元快剪暴打设计总监': '消费观察',
+    '理发店办卡套路': '消费观察',
+    '外卖越来越贵': '消费观察',
+    '预制菜进校园': '消费观察',
+    '老人花钱请人陪聊': '社会话题',
+    '为什么老一辈人觉得搭伙过日子很幸福': '社会话题',
+    '如何早起': '自我成长',
+    '要不要裸辞': '职场打工',
+    '53岁减重血糖回正常': '健康生活',
+  };
+  for (const [topic, want] of Object.entries(cases)) {
+    assert.strictEqual(CopyGen.detectSector(topic).name, want, `「${topic}」判成了别的赛道`);
+  }
+});
+
+test('赛道 mode：观察类走 comment，方法论类走 method', () => {
+  assert.strictEqual(CopyGen.detectSector('10元快剪暴打设计总监').mode, 'comment');
+  assert.strictEqual(CopyGen.detectSector('老人花钱请人陪聊').mode, 'comment');
+  assert.strictEqual(CopyGen.detectSector('如何早起').mode, 'method');
+  assert.strictEqual(CopyGen.detectSector('30岁还没存款').mode, 'method');
+});
+
+test('评论类正文：不能出现「先砍掉一半目标」这类方法论要点', () => {
+  // 这是改造前最刺眼的 bug：「10元快剪」被写成「把清单砍到只剩三件」
   const r = CopyGen.generate({ topic: '10元快剪暴打设计总监', platform: 'gongzhonghao', points: 5 });
-  assert.ok(r.sectorKey, '没识别出赛道');
+  const forbidden = ['砍掉一半目标', '拆到', '打卡上瘾', '固定锚点', '允许自己做得很烂'];
+  for (const f of forbidden) {
+    assert.ok(!r.body.includes(f), `评论类正文里混进了方法论要点：${f}`);
+  }
+});
+
+test('评论类正文：要点必须和消费/社会话题相关', () => {
+  const r = CopyGen.generate({ topic: '10元快剪暴打设计总监', platform: 'gongzhonghao', points: 5 });
+  // 至少有一个要点提到价格/贵/卡/套路/问 这类消费向的词
+  const items = r.body.split('\n\n').filter((x) => /^[一二三四五]、/.test(x));
+  assert.strictEqual(items.length, 5);
+  const related = items.filter((x) => /价|贵|便宜|卡|套路|问|账|钱|成本/.test(x));
+  assert.ok(related.length >= 3, `只有 ${related.length}/5 条和消费相关`);
+});
+
+test('评论类正文：不同话题的同赛道要点应尽量不重叠', () => {
+  const pickItems = (t) => CopyGen.generate({ topic: t, platform: 'gongzhonghao', points: 5 })
+    .body.split('\n\n').filter((x) => /^[一二三四五]、/.test(x))
+    .map((x) => x.split('\n')[0].slice(3, 12));
+  const a = pickItems('10元快剪暴打设计总监');
+  const b = pickItems('外卖越来越贵');
+  const overlap = a.filter((x) => b.includes(x)).length;
+  // 同一赛道同一个池子，允许少量重叠；超过 3 条说明条件过滤没生效
+  assert.ok(overlap <= 3, `两个不同话题重叠了 ${overlap}/5 条要点`);
+});
+
+test('评论类钩子：不能用「我自己试了一遍」这种方法论语气', () => {
+  for (let i = 0; i < 12; i++) {
+    const r = CopyGen.generate({ topic: '老人花钱请人陪聊', platform: 'gongzhonghao', points: 5 });
+    assert.ok(!r.body.includes('我自己试了一遍'), '评论类用了方法论钩子');
+    assert.ok(!/明天照着做第一条/.test(r.body), '评论类用了方法论 CTA');
+  }
+});
+
+test('方法类正文：不能出现「差价在名头」这类消费向要点', () => {
+  const r = CopyGen.generate({ topic: '如何早起', platform: 'gongzhonghao', points: 5 });
+  assert.ok(!r.body.includes('名头'), '方法类混进了消费向要点');
 });
 
 /* ---------------- sensitive ---------------- */
@@ -207,6 +266,40 @@ test('buildPicks：不信任落盘里的旧 score，一律按新规则重算', (
   };
   const picks = m.buildPicks(fake.hot);
   assert.ok(!picks.some((p) => p.score === 999), '旧 score 被直接信任了');
+});
+
+test('热榜过滤：人物八卦 / 撞脸奇闻不该进选题池', () => {
+  const m = require(path.join(ROOT, 'scripts/fetch-hot.js'));
+  for (const w of ['撞脸王祖贤女生去景区上班', '姜乘澜回忆小时候的妈妈']) {
+    assert.ok(m.scoreWord(w).score <= 0, `八卦类没被压分：${w} → ${m.scoreWord(w).score}`);
+  }
+  // 但纯八卦就算加上提问结构，也不该进选题池（"如何看待网红撞脸走红"仍然是八卦）
+  assert.ok(m.scoreWord('如何看待网红撞脸明星走红').score <= 0, '换汤不换药的八卦被放行了');
+  // 真正的议题结构应该有加成：同一件事，提问式比陈述式分高
+  assert.ok(
+    m.scoreWord('为什么老一辈人觉得搭伙过日子很幸福').score > m.scoreWord('老人搭伙过日子').score,
+    '议题结构没有加成'
+  );
+});
+
+test('要点池：方法类也支持条件过滤（饮食要点不跑到作息话题里）', () => {
+  const eat = CopyGen.generate({ topic: '每天吃多少鸡蛋才科学', platform: 'gongzhonghao', points: 5 });
+  const sleep = CopyGen.generate({ topic: '如何早起', platform: 'gongzhonghao', points: 5 });
+  // 饮食类专属要点不该出现在早起话题里
+  assert.ok(!sleep.body.includes('吃得太单一'), '饮食要点跑到了作息话题');
+  assert.ok(!sleep.body.includes('指南给的是范围'), '饮食要点跑到了作息话题');
+  // 反过来，作息要点也不该霸占饮食话题
+  const eatItems = eat.body.split('\n\n').filter((x) => /^[一二三四五]、/.test(x));
+  assert.ok(eatItems.length === 5, '饮食话题条目数不对');
+});
+
+test('要点池：健康话题能抽到饮食向内容', () => {
+  let hit = 0;
+  for (let i = 0; i < 20; i++) {
+    const r = CopyGen.generate({ topic: '每天吃几个鸡蛋合适', platform: 'gongzhonghao', points: 5 });
+    if (/吃|饮食|营养|总量|结构|种类/.test(r.body)) hit++;
+  }
+  assert.ok(hit >= 14, `20 次里只有 ${hit} 次抽到饮食向内容`);
 });
 
 /* ---------------- 原子写 ---------------- */
