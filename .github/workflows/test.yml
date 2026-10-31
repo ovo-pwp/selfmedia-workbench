@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    # 每天 07:30 (UTC+8) 检查一次，内容和校验规则改动后能立刻发现
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 回归测试（引擎 + 校验器 + 热榜过滤，全离线）
+        run: npm test
+
+      - name: 校验线上 daily.json
+        run: npm run validate
+
+      - name: 生成管线演练（--dry，不写盘）
+        run: node scripts/gen-daily.js --offline --dry || echo "::warning::离线演练失败（可能是 hot.json 太旧），不作为阻断"

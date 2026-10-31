@@ -262,41 +262,71 @@
     douyin: { name: '抖音', titleCount: 4, emoji: false, sep: '\n\n', tagCount: 5, maxPointLen: 70 },
   };
 
-  /* ---------- 标题生成 ---------- */
+  /* ---------- 标题生成 ----------
+   * 信息流里标题超过 ~30 字就被截断。
+   * 所以热词很长时不切词（切了会出「搭伙过日子很幸的」这种半截话），
+   * 而是换一整套紧凑模板：话题原样保留，只缩掉装饰部分。
+   */
+  const TITLE_MAX = 30;
+
+  function clipTopic(topic, platform) {
+    const max = { gongzhonghao: 22, xiaohongshu: 20, shipinhao: 18, douyin: 18 }[platform] || 20;
+    const t = String(topic).trim();
+    if (t.length <= max) return t;
+    // 只在标点处断，绝不从词中间切
+    const m = t.match(/^(.{4,}?)[，、：；,.:;？！?!]/);
+    if (m && m[1].length >= 4) return m[1];
+    return t;
+  }
+
+  /* 模板函数化：先试完整版，太长就换紧凑版，再不行才硬截（并清掉尾部虚词） */
+  function fit(full, compact, topicShort, n) {
+    let out = full(topicShort, n);
+    if (out.length <= TITLE_MAX) return out;
+    out = compact(topicShort, n);
+    if (out.length <= TITLE_MAX) return out;
+    return out.slice(0, TITLE_MAX).replace(/[的了很都就也还把和被让给与，、：；,.:;（(]+$/, '');
+  }
+
   function titles(topic, points, sectorName, platform, angle) {
     const n = points;
+    const t = clipTopic(topic, platform);
+
+    // [完整版, 紧凑版]
     const base = [
-      `${topic}：我踩过的 ${n} 个坑，你别再踩了`,
-      `关于${topic}，说 ${n} 句大实话`,
-      `${topic}做不好，八成是这 ${n} 件事没搞对`,
-      `我把${topic}重做了一遍，总结出 ${n} 条`,
-      `${n} 条${topic}的笨办法，但真管用`,
-      `别再瞎试了，${topic}就这 ${n} 步`,
-      `${topic}这件事，我想说 ${n} 点`,
-      `说 ${n} 个${topic}的真相，有点扎心`,
-      `如果重来一次，${topic}我会这么做（${n} 条）`,
-      `${n} 个让${topic}变简单的动作`,
+      [(x, m) => `${x}：我踩过的 ${m} 个坑`, (x, m) => `${x}的 ${m} 个坑`],
+      [(x, m) => `关于${x}，说 ${m} 句大实话`, (x, m) => `${x}，${m} 句实话`],
+      [(x, m) => `${x}做不好，八成是这 ${m} 件事`, (x, m) => `${x}差在哪？${m} 件事`],
+      [(x, m) => `${x}重做一遍，总结出 ${m} 条`, (x, m) => `${x}，我总结出 ${m} 条`],
+      [(x, m) => `${m} 条${x}的笨办法，真管用`, (x, m) => `${m} 条笨办法，真管用`],
+      [(x, m) => `别再瞎试了，${x}就这 ${m} 步`, (x, m) => `${x}就这 ${m} 步`],
+      [(x, m) => `${x}这件事，我想说 ${m} 点`, (x, m) => `${x}，我想说 ${m} 点`],
+      [(x, m) => `说 ${m} 个${x}的真相`, (x, m) => `${m} 个真相，有点扎心`],
+      [(x, m) => `重来一次，${x}我会这么做（${m} 条）`, (x, m) => `${x}重来一次（${m} 条）`],
+      [(x, m) => `${m} 个让${x}变简单的动作`, (x, m) => `${m} 个动作，让事变简单`],
     ];
     const xhs = [
-      `${topic}｜我总结了 ${n} 条，第 3 条最有用✨`,
-      `真的会谢！${topic}原来只要 ${n} 步`,
-      `${topic}别乱试了😭 这 ${n} 条亲测有效`,
-      `搞懂${topic}，我只用了这 ${n} 个方法`,
-      `${topic}踩坑记录｜${n} 条血泪经验`,
-      `建议收藏｜${topic}的 ${n} 个关键动作`,
+      [(x, m) => `${x}｜我总结了 ${m} 条✨`, (x, m) => `${x}｜${m} 条✨`],
+      [(x, m) => `真的会谢！${x}原来只要 ${m} 步`, (x, m) => `${x}只要 ${m} 步`],
+      [(x, m) => `${x}别乱试了😭 这 ${m} 条亲测有效`, (x, m) => `${x}｜亲测 ${m} 条`],
+      [(x, m) => `搞懂${x}，只用了这 ${m} 个方法`, (x, m) => `${x}｜${m} 个方法`],
+      [(x, m) => `${x}踩坑记录｜${m} 条血泪经验`, (x, m) => `${x}踩坑记录`],
+      [(x, m) => `建议收藏｜${x}的 ${m} 个关键动作`, (x, m) => `收藏｜${m} 个关键动作`],
     ];
     const video = [
-      `${topic}，${n} 句话讲明白`,
-      `${topic}的 ${n} 个坑，第 ${Math.min(2, n)} 个最要命`,
-      `${n} 条${topic}的实话，可能不太好听`,
-      `${topic}怎么做？我说 ${n} 点`,
+      [(x, m) => `${x}，${m} 句话讲明白`, (x, m) => `${x}｜${m} 句话`],
+      [(x, m) => `${x}的 ${m} 个坑，第 2 个最要命`, (x, m) => `${x}的 ${m} 个坑`],
+      [(x, m) => `${m} 条${x}的实话，不太好听`, (x, m) => `${m} 条实话，不太好听`],
+      [(x, m) => `${x}怎么做？我说 ${m} 点`, (x, m) => `${x}，${m} 点`],
     ];
     let pool = base;
     if (platform === 'xiaohongshu') pool = xhs;
     else if (platform === 'shipinhao' || platform === 'douyin') pool = video;
-    const out = pickN(pool, PLATFORM_CFG[platform].titleCount);
-    // 保证首条带数字，符合"标题说几条就是几条"
-    out.unshift(base[0]);
+
+    const picked = pickN(pool, PLATFORM_CFG[platform].titleCount);
+    // 首条固定用主模板，保证一定有一个「说了几条」的标题
+    picked.unshift(base[0]);
+    const out = picked.map(([full, compact]) => fit(full, compact, t, n));
     return [...new Set(out)].slice(0, PLATFORM_CFG[platform].titleCount);
   }
 
@@ -405,5 +435,9 @@
     };
   }
 
-  window.CopyGen = { generate, detectSector, PLATFORM_CFG, SECTORS };
+  const API = { generate, detectSector, PLATFORM_CFG, SECTORS };
+
+  // 浏览器与 Node 双端可用：scripts/gen-daily.js 和 tests/ 都要用同一份引擎
+  if (typeof window !== 'undefined') window.CopyGen = API;
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();

@@ -49,6 +49,44 @@
 
 ---
 
+## 二·五、内容是怎么自动更新的（v1.1 起，链路已进仓库）
+
+以前每天 7:00 的更新靠仓库外手工跑，现在全部收进代码里，**关掉浏览器也会更新**：
+
+```
+node scripts/gen-daily.js        抓热榜 → 生成 → 校验 → 原子写盘
+```
+
+服务启动后会自动调度：每天过了 `GEN_HOUR`（默认 7 点）且 `daily.json` 还是昨天的，就自动跑一次。
+也可以手动触发：`curl http://localhost:7788/api/gen`（非本机调用要带 `?key=` 或 `x-api-key`）。
+
+**三层保障，坏稿永远上不了线：**
+
+| 层 | 做什么 | 失败时 |
+|---|---|---|
+| 校验 | 标题条数 == 正文条数、字数区间、段数、重复段、合规词、AI 味 | 有 error 直接中止 |
+| 备份 | 写盘前把旧稿存成 `data/daily.json.bak` + `data/history/daily-日期.json` | 可随时回滚 |
+| 原子写 | 写 `.tmp` → fsync → rename | 断电也不会留下半截 JSON |
+
+**手工稿优先，模板稿兜底：**
+
+- `data/daily.override.json` —— 你（或大模型）写好的人工稿放这里，**按标题精确匹配热榜选题**，命中就用你的稿子
+- 没命中的选题由模板引擎现场生成，标 `source: template`（能发，但同赛道会撞结构，发之前改掉开头结尾）
+- 自动生成**永远不会覆盖**已有人工稿：旧稿里的成稿会被自动收割进 override 层
+
+**常用命令：**
+
+```bash
+npm run gen            # 生成今天的内容（当天已生成过会跳过）
+npm run gen:dry        # 只校验不写盘，看会产出什么
+npm run gen:offline    # 不联网，用本地 hot.json 生成
+npm run validate       # 单独校验 data/daily.json
+npm test               # 24 个回归测试，全离线
+node scripts/gen-daily.js --force   # 强制重跑今天
+```
+
+---
+
 ## 三、11 个板块
 
 | 板块 | 干什么 |
@@ -153,9 +191,18 @@ selfmedia-workbench/
 │       └── app.js           路由与交互
 ├── data/
 │   ├── daily.json           今日选题 + 文案 + 搞钱项目（每天自动更新）
-│   └── hot.json             最近一次抓到的热榜（离线兜底）
+│   ├── daily.json.bak       上一版备份（写盘前自动生成，可回滚）
+│   ├── daily.override.json  ★ 手工稿覆盖层：写在这里的内容不会被模板稿覆盖
+│   ├── money-bank.json      搞钱项目金库，每天从里面轮换
+│   └── hot.json             最近一次抓到的热榜（离线兜底，不入 git）
 ├── scripts/
-│   └── fetch-hot.js         热榜抓取引擎
+│   ├── fetch-hot.js         热榜抓取 + 打分过滤引擎
+│   ├── gen-daily.js         每日生成管线（抓取→生成→校验→原子写）
+│   └── validate-daily.js    出厂校验器（条数/字数/合规/AI 味）
+├── tests/
+│   └── engines.test.js      24 个回归测试（node --test，全离线）
+├── .github/workflows/
+│   └── test.yml             CI：push / 每日定时跑测试和校验
 └── icons/                   图标
 ```
 
@@ -176,6 +223,20 @@ selfmedia-workbench/
 
 **Q：数据会丢吗？**
 浏览器清缓存会丢。养成每周「导出备份」的习惯。
+
+**Q：自动生成的文案为什么读起来像模板？**
+因为没命中 `data/daily.override.json`，走了模板引擎兜底（标 `source: template`）。
+模板稿的三平台结构是固定的，同一赛道换话题会撞。想让稿子真的像你，两条路：
+1. 往 override 里写人工稿（质量最高）
+2. 往「设置 → 我的素材库」填真实经历，模板会把你的话拼进去
+
+**Q：会不会自动更新把昨天的好稿子覆盖掉？**
+不会。写盘前会把旧稿里的成稿自动收割进 `daily.override.json`，模板稿碰不到它们。
+另外每次写盘前都备份到 `data/daily.json.bak`，标了日期的历史稿在 `data/history/`。
+
+**Q：线上更新失败了怎么办？**
+有 error 就中止，`data/daily.json` 一个字都不会动，页面继续用上一版。
+看失败原因：`npm run gen:dry`（不写盘）+ `/api/health` 的 `genLast` 字段。
 
 **Q：能换颜色吗？**
 `assets/css/style.css` 最上面有一组颜色变量，改 4 个十六进制色值就能换整套配色。

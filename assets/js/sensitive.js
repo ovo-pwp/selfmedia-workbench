@@ -122,5 +122,9 @@
       .replace(/\u0002/g, '</mark>');
   }
 
-  window.Sensitive = { check, summary, highlightHTML, RULES, LEVEL_NAME };
+  const API = { check, summary, highlightHTML, RULES, LEVEL_NAME };
+
+  // 浏览器与 Node 双端可用：scripts/validate-daily.js 和 tests/ 都要用同一份词库
+  if (typeof window !== 'undefined') window.Sensitive = API;
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();

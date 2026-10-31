@@ -22,3 +22,12 @@ desktop.ini
 npm-debug.log*
 _shots/
 *.tmp
+
+# 运行产物：每天重抓，不该进仓库（data/daily.json 是产物但需要跟着走，故保留）
+data/hot.json
+data/*.bak
+data/daily.json.tmp
+data/history/
+
+# 手工稿覆盖层里可能含个人素材，本机保留、按需提交
+# data/daily.override.json

@@ -9,6 +9,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 
 // 延迟加载抓取模块：即使它出问题，也不能拖垮服务启动
 let _hotMod = null;
@@ -21,6 +22,48 @@ const ROOT = __dirname;
 // 云端沙箱必须监听 3000；本地 Windows 默认 7788
 const PORT = Number(process.env.PORT) || (process.platform === 'win32' ? 7788 : 3000);
 const CACHE_MS = 5 * 60 * 1000; // 热榜缓存 5 分钟
+
+/* 每日内容生成：每天这个点之后自动跑一次（本地/云端一致）
+ * 原来这一步靠仓库外手工跑，现在收进服务里，关了浏览器也会更新。
+ */
+const GEN_HOUR = Number(process.env.GEN_HOUR != null ? process.env.GEN_HOUR : 7);
+const GEN_INTERVAL_MS = 30 * 60 * 1000; // 每 30 分钟检查一次
+
+/* 写接口的简易访问码：不设则只允许本机调用，设了就要带 ?key= */
+const API_KEY = process.env.API_KEY || '';
+
+/* 限流：同一 IP 每分钟最多 N 次写操作，防止 /api/hot?force=1 被人刷爆源站 */
+const RATE = new Map();
+const RATE_MAX = 6;
+const RATE_WINDOW = 60 * 1000;
+function rateLimited(req) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const rec = RATE.get(ip) || { n: 0, at: now };
+  if (now - rec.at > RATE_WINDOW) { rec.n = 0; rec.at = now; }
+  rec.n++;
+  RATE.set(ip, rec);
+  if (RATE.size > 5000) RATE.clear(); // 防内存膨胀
+  return rec.n > RATE_MAX;
+}
+
+function isLocal(req) {
+  const ip = req.socket.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+/** 写接口鉴权：有 API_KEY 就校验 key；没配就只允许本机 */
+function authWrite(req, u) {
+  if (API_KEY) {
+    const k = u.searchParams.get('key') || req.headers['x-api-key'] || '';
+    // 定长比较，避免时序侧信道
+    const a = Buffer.from(String(k));
+    const b = Buffer.from(API_KEY);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+    return true;
+  }
+  return isLocal(req);
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -98,6 +141,67 @@ function sendJSON(res, code, obj) {
   res.end(body);
 }
 
+/* ---------------- 每日内容生成 ---------------- */
+let genTimer = null;
+let genRunning = false;
+let genLast = { at: 0, ok: null, error: null };
+
+let _genMod = null;
+function genMod() {
+  if (!_genMod) _genMod = require('./scripts/gen-daily.js');
+  return _genMod;
+}
+
+function dailyDate() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'daily.json'), 'utf8')).date;
+  } catch (e) { return null; }
+}
+
+function todayStr() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+async function runGen(reason) {
+  if (genRunning) return { ok: false, error: 'already running' };
+  genRunning = true;
+  const t0 = Date.now();
+  try {
+    console.log(`[gen] 开始生成（${reason}）`);
+    const r = await genMod().run({ quiet: true });
+    genLast = { at: Date.now(), ok: r.ok, error: r.error || null };
+    if (r.ok) {
+      console.log(`[gen] 完成，用时 ${((Date.now() - t0) / 1000).toFixed(1)}s${r.skipped ? '（当天已生成，跳过）' : ''}`);
+    } else {
+      console.error('[gen] 失败：' + (r.error || JSON.stringify((r.errors || []).slice(0, 3))));
+    }
+    return r;
+  } catch (e) {
+    genLast = { at: Date.now(), ok: false, error: e.message };
+    console.error('[gen] 异常：' + e.message);
+    return { ok: false, error: e.message };
+  } finally {
+    genRunning = false;
+  }
+}
+
+/** 每小时检查一次：今天的稿子还没生成、且已过 GEN_HOUR 点，就跑一次 */
+function scheduleGen() {
+  if (genTimer) clearInterval(genTimer);
+  const tick = () => {
+    const h = new Date().getHours();
+    if (h < GEN_HOUR) return;
+    if (dailyDate() === todayStr()) return;
+    runGen('定时任务');
+  };
+  // 启动后 20 秒先看一次（不用等半小时）
+  setTimeout(tick, 20000);
+  genTimer = setInterval(tick, GEN_INTERVAL_MS);
+  if (genTimer.unref) genTimer.unref();
+}
+
 function serveStatic(req, res, urlPath) {
   let p = decodeURIComponent(urlPath.split('?')[0]);
   if (p === '/' || p === '') p = '/index.html';
@@ -129,8 +233,20 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
 
   if (u.pathname === '/api/hot') {
-    const d = await getHot(u.searchParams.get('force') === '1');
+    // ?force=1 会真的去抓源站，必须限流，否则谁都能拿来刷我们
+    const force = u.searchParams.get('force') === '1';
+    if (force && rateLimited(req)) {
+      return sendJSON(res, 429, { ok: false, error: '太频繁了，等一分钟再试' });
+    }
+    const d = await getHot(force);
     return sendJSON(res, 200, d);
+  }
+
+  if (u.pathname === '/api/gen') {
+    if (!authWrite(req, u)) return sendJSON(res, 403, { ok: false, error: '未授权' });
+    if (genRunning) return sendJSON(res, 409, { ok: false, error: '正在生成，别催' });
+    const r = await runGen('手动触发');
+    return sendJSON(res, r.ok ? 200 : 500, r);
   }
 
   if (u.pathname === '/api/daily') {
@@ -144,7 +260,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/api/health') {
-    return sendJSON(res, 200, { ok: true, at: new Date().toISOString(), hotCachedAt: hotCache.at });
+    return sendJSON(res, 200, {
+      ok: true,
+      at: new Date().toISOString(),
+      hotCachedAt: hotCache.at,
+      dailyDate: dailyDate(),
+      genHour: GEN_HOUR,
+      genLast,
+    });
   }
 
   serveStatic(req, res, req.url);
@@ -172,6 +295,8 @@ function onListening() {
   console.log('  ─────────────────────────────');
   console.log('  关闭窗口或按 Ctrl+C 停止');
   console.log('');
+  // 每天 GEN_HOUR 点后自动更新内容（原来靠仓库外手工跑）
+  scheduleGen();
   // 监听成功后再开浏览器，避免打开时还没起来（仅 Windows 本地运行）
   if (!process.env.NO_OPEN && process.platform === 'win32') {
     try {

@@ -1,11 +1,16 @@
 {
   "name": "selfmedia-workbench",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "自媒体个人工作台 · 每日选题 / 爆款文案 / 搞钱项目 / 成长打卡",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "gen": "node scripts/gen-daily.js",
+    "gen:dry": "node scripts/gen-daily.js --dry",
+    "gen:offline": "node scripts/gen-daily.js --offline",
+    "validate": "node scripts/validate-daily.js data/daily.json",
+    "test": "node --test tests/engines.test.js"
   },
   "engines": {
     "node": ">=18"
