@@ -3,8 +3,8 @@
   'use strict';
 
   const DB_NAME = 'zi-meiti-workbench';
-  const DB_VER = 1;
-  const STORES = ['docs', 'praise', 'soul', 'plans', 'books', 'skills', 'posts', 'favs', 'kv'];
+  const DB_VER = 2; // v2：新增 tarot 集合（每日牌运）
+  const STORES = ['docs', 'praise', 'soul', 'plans', 'books', 'skills', 'posts', 'favs', 'kv', 'tarot'];
 
   let dbp = null;
 

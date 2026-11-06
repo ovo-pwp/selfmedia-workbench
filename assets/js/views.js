@@ -495,6 +495,78 @@
     ${shown.length ? shown.map(recRow).join('') : empty('📤', all.length ? '这个分类下还没有记录' : '还没记录发布<br>发完一条就回来记一下')}`;
   }
 
+  /* ================= 今日牌运 ================= */
+
+  async function tarotView(ctx) {
+    const all = (await Store.all('tarot')).sort((a, b) => String(b.id).localeCompare(String(a.id)));
+    const today = todayStr();
+    const cur = all.find((x) => x.id === today);
+    const card = cur ? window.Tarot.CARDS[cur.n] : null;
+    // 刚抽的牌：先渲染背面再翻，才有动画；从菜单进来的直接显示正面
+    const pending = !!App.state.tarotPending;
+    const showFront = !!(cur && card && !pending);
+    const rv = cur ? cur.reversed : false;
+    const recent = all.filter((x) => x.id !== today).slice(0, 7);
+
+    const front = card ? `
+        <div class="tc-inner">
+          <div class="tc-face tc-back"><span class="tc-back-sym">🔮</span><span class="tc-back-txt">点一下抽牌</span></div>
+          <div class="tc-face tc-front ${rv ? 'rev' : ''}">
+            <div class="tc-sym">${card.sym}</div>
+            <div class="tc-name">${esc(card.name)}</div>
+            <div class="tc-en">${esc(card.en)}</div>
+            <div class="tc-pos">${rv ? '逆位' : '正位'}</div>
+            <div class="tc-kw">${card.kw.map((k) => esc(k)).join(' · ')}</div>
+          </div>
+        </div>` : `
+        <div class="tc-inner">
+          <div class="tc-face tc-back"><span class="tc-back-sym">🔮</span><span class="tc-back-txt">点一下抽牌</span></div>
+          <div class="tc-face tc-front"></div>
+        </div>`;
+
+    return `
+    <div class="hero" style="background:linear-gradient(125deg,#F0EAFF,#F6ECFA 55%,#EAF2FF)">
+      <div class="deco">🔮</div>
+      <h2>今日牌运</h2>
+      <p>${cur ? '今天已经抽过了 · 想换一张也可以再抽' : '抽一张，看看今天该往哪走'}</p>
+    </div>
+
+    <div class="tarot-stage">
+      <div class="tarot-card ${showFront ? 'flipped' : ''}" data-act="drawTarot">
+        ${front}
+      </div>
+      <div class="tarot-hint">${showFront ? '再点一次，换一张' : '点牌面翻开'}</div>
+    </div>
+
+    ${cur && card ? `
+      <div class="card">
+        <div class="card-title">📖 今日解读</div>
+        <div style="font-size:14px;line-height:1.9;color:var(--ink-1);margin-top:6px">${esc(rv ? card.rev : card.up)}</div>
+        <div class="tarot-act">
+          <span class="ta-label">今天就做这一件</span>
+          <span class="ta-text">${esc(card.act)}</span>
+        </div>
+      </div>` : ''}
+
+    ${recent.length ? `
+      <div class="card">
+        <div class="card-title">🗓 之前抽到的</div>
+        <div class="card-sub">回头看会发现，牌在提醒你同一件事</div>
+        ${recent.map((x) => {
+          const c = window.Tarot.CARDS[x.n];
+          if (!c) return '';
+          return `<div class="tarot-row">
+            <span class="tr-date">${String(x.id).slice(5)}</span>
+            <span class="tr-sym">${c.sym}</span>
+            <span class="tr-name">${esc(c.name)}${x.reversed ? ' · 逆' : ''}</span>
+            <span class="tr-kw">${esc((c.kw || []).slice(0, 2).join(' '))}</span>
+          </div>`;
+        }).join('')}
+      </div>` : (cur ? `<div class="card-sub" style="text-align:center;margin:4px 0 14px">明天再来抽一张，这里会攒下你的牌运记录</div>` : '')}
+
+    <div class="tarot-foot">牌是一面镜子，照的是你本来就知道的事。决定权一直在你手上。</div>`;
+  }
+
   /* ================= 读书 ================= */
   async function books(ctx) {
     const list = await Store.all('books');
@@ -647,6 +719,6 @@
     </div>`;
   }
 
-  window.Views = { home, write, money, praise, soul, plan, posts, books, skills, docs, settings };
+  window.Views = { home, write, money, praise, soul, plan, posts, books, skills, docs, settings, tarot: tarotView };
   window.ViewUtil = { esc, todayStr, streak, PLAT, PLAT_EMOJI, empty, last30Dots, POST_TYPES, POST_SLOTS };
 })();
