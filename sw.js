@@ -1,5 +1,5 @@
 /* Service Worker：静态资源缓存优先，数据接口网络优先并兜底缓存 */
-const VER = 'v9';
+const VER = 'v10';
 const STATIC_CACHE = 'zm-static-' + VER;
 const DATA_CACHE = 'zm-data-' + VER;
 
@@ -43,7 +43,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
 
-  // 数据：先网络（保证最新），失败用缓存 → 页面永远不会空白
+  // 数据接口：先网络，失败用缓存 → 页面永远不会空白
   if (url.pathname.includes('/api/') || url.pathname.endsWith('/daily.json') || url.pathname.endsWith('/hot.json')) {
     e.respondWith(
       fetch(req).then((res) => {
@@ -55,22 +55,18 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // 静态：缓存优先
+  // 其余（HTML / JS / CSS / 图标）：网络优先。
+  // 之前是缓存优先，导致改了代码用户要刷新两次才看得到，体验很差。
+  // 断开网络时自动回退到缓存，离线依然可用。
   e.respondWith(
-    caches.match(req).then((hit) => {
-      if (hit) {
-        fetch(req).then((res) => {
-          if (res.ok) caches.open(STATIC_CACHE).then((c) => c.put(req, res)).catch(() => {});
-        }).catch(() => {});
-        return hit;
+    fetch(req).then((res) => {
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(STATIC_CACHE).then((c) => c.put(req, copy)).catch(() => {});
       }
-      return fetch(req).then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(STATIC_CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        }
-        return res;
-      }).catch(() => caches.match('./index.html'));
-    })
+      return res;
+    }).catch(() =>
+      caches.match(req).then((hit) => hit || caches.match('./index.html') || caches.match('./'))
+    )
   );
 });

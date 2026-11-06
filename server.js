@@ -221,7 +221,8 @@ function serveStatic(req, res, urlPath) {
     if (p.endsWith('manifest.json')) ctype = 'application/manifest+json; charset=utf-8';
     res.writeHead(200, {
       'Content-Type': ctype,
-      'Cache-Control': isHTML ? 'no-cache' : 'public, max-age=3600',
+      // no-cache：每次回源验证（没改动就是 304，很快），避免改了代码用户还看旧版
+      'Cache-Control': 'no-cache',
       'Service-Worker-Allowed': '/',
       'Access-Control-Allow-Origin': '*',
     });

@@ -852,6 +852,11 @@
       App.state.tarotQ = v;
     },
 
+    pickSpread(el) {
+      App.state.tarotSpread = el.dataset.key;
+      go('tarot', {}, true);
+    },
+
     async drawTarot() {
       if (App.state.tarotBusy) return;
       App.state.tarotBusy = true;
@@ -859,30 +864,36 @@
       const q = input ? input.value.trim().slice(0, 80) : (App.state.tarotQ || '');
       App.state.tarotQ = q;
 
-      const el = document.querySelector('.tarot-card');
-      // 已经翻开的，先翻回去再抽
-      if (el && el.classList.contains('flipped')) {
-        el.classList.remove('flipped');
-        await new Promise((r) => setTimeout(r, 340));
-      }
-      const r = Tarot.draw();
+      const spreadKey = App.state.tarotSpread || 'three';
+      const slots = (Tarot.SPREADS[spreadKey] || Tarot.SPREADS.three).slots;
+
+      // 洗牌：牌堆抖一下，模拟真实的洗牌动作
+      const stage = document.querySelector('.tarot-stage');
+      if (stage) stage.classList.add('shuffling');
+      await new Promise((r) => setTimeout(r, 640));
+
+      const cards = Tarot.drawSpread(slots.length);
       await Store.put('tarot', {
-        id: Store.uid(), date: Tarot.todayKey(), n: r.card.n, reversed: r.reversed,
-        q, at: new Date().toISOString(),
+        id: Store.uid(), date: Tarot.todayKey(), spread: spreadKey, cards, q,
+        n: cards[0].n, reversed: cards[0].reversed, // 兼容旧字段
+        at: new Date().toISOString(),
       });
       App.state.tarotPending = true;
       await go('tarot', {}, true);
       App.state.tarotPending = false;
-      App.state.tarotBusy = false;
-      // 双帧后再加类，确保 transition 生效，能看到翻牌
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        const c = document.querySelector('.tarot-card');
-        if (c) c.classList.add('flipped');
-        const hint = document.querySelector('.tarot-hint');
-        if (hint) hint.textContent = '再抽一张（换了问题也可以重抽）';
-        const stage = document.querySelector('.tarot-stage');
-        if (stage) stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }));
+
+      // 按牌阵顺序依次翻开
+      const els = Array.from(document.querySelectorAll('.tarot-stage .tarot-card'));
+      els.forEach((el, i) => setTimeout(() => el.classList.add('flipped'), 130 + i * 380));
+
+      const hint = document.querySelector('.tarot-hint');
+      if (hint) setTimeout(() => { hint.textContent = '再洗一次（换了问题也可以重抽）'; }, 130 + els.length * 380);
+
+      setTimeout(() => {
+        App.state.tarotBusy = false;
+        const s = document.querySelector('.tarot-stage');
+        if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200 + els.length * 380);
     },
 
     /* --- 合规检查 --- */
@@ -1013,7 +1024,21 @@
     await go(view, {}, true);
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        // 有新版本装好了 → 自动刷新一次，避免用户长期停留在旧版
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              if (!sessionStorage.getItem('sw-reloaded')) {
+                sessionStorage.setItem('sw-reloaded', '1');
+                location.reload();
+              }
+            }
+          });
+        });
+      }).catch(() => {});
     }
   }
 

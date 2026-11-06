@@ -250,6 +250,36 @@
     };
   }
 
+  /** 按牌阵抽牌：真实塔罗同一副牌不会重复，所以不洗回抽取 */
+  function drawSpread(count) {
+    const pool = CARDS.slice();
+    const out = [];
+    for (let i = 0; i < count && pool.length; i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      const c = pool.splice(idx, 1)[0];
+      out.push({ n: c.n, reversed: Math.random() < 0.5 });
+    }
+    return out;
+  }
+
+  /* 牌阵定义：位置名称 + 这个位置该用什么口吻带出牌意 */
+  const SPREADS = {
+    one: {
+      name: '一张', desc: '一问一答，最直接',
+      slots: [
+        { label: '当前', pre: '这张牌说的是这件事此刻的样子——' },
+      ],
+    },
+    three: {
+      name: '三张', desc: '过去 · 现在 · 走向，看整件事的脉络',
+      slots: [
+        { label: '过去', pre: '这件事的来处——' },
+        { label: '现在', pre: '你现在站的位置——' },
+        { label: '走向', pre: '照这样走下去——' },
+      ],
+    },
+  };
+
   /** 识别问题类型 */
   function topicOf(question) {
     const q = String(question || '').trim();
@@ -274,5 +304,34 @@
     };
   }
 
-  window.Tarot = { CARDS, draw, todayKey, topicOf, interpret };
+  /** 牌阵解读：逐张给位置 + 牌意，最后统一落到问题上 */
+  function interpretSpread(question, cards) {
+    const q = String(question || '').trim().slice(0, 80);
+    const topic = topicOf(q);
+    const spread = cards.length >= 3 ? SPREADS.three : SPREADS.one;
+    const items = cards.map((c, i) => {
+      const card = CARDS[c.n];
+      const slot = spread.slots[i] || spread.slots[spread.slots.length - 1];
+      return {
+        n: c.n, reversed: c.reversed, card,
+        label: slot.label,
+        pre: slot.pre,
+        text: c.reversed ? card.rev : card.up,
+      };
+    });
+    // 用最后一张（走向）的能量决定怎么落到问题上
+    const last = cards[cards.length - 1];
+    const energy = ENERGY[last.n] || 'advance';
+    const lens = topic ? (LENS[topic.key] && LENS[topic.key][energy]) : null;
+    return {
+      question: q,
+      topic: topic ? topic.name : '',
+      spread: cards.length >= 3 ? 'three' : 'one',
+      items,
+      lens: lens ? lens.view : '',
+      action: lens ? lens.do : (CARDS[last.n] ? CARDS[last.n].act : ''),
+    };
+  }
+
+  window.Tarot = { CARDS, SPREADS, draw, drawSpread, todayKey, topicOf, interpret, interpretSpread };
 })();

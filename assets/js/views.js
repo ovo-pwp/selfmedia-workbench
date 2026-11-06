@@ -499,59 +499,77 @@
 
   async function tarotView(ctx) {
     const all = (await Store.all('tarot'))
-      .filter((x) => window.Tarot.CARDS[x.n])
+      .filter((x) => (x.cards && x.cards.length) || window.Tarot.CARDS[x.n])
       .sort((a, b) => String(b.at || b.id).localeCompare(String(a.at || a.id)));
     const today = todayStr();
     // all 已按抽牌时间倒序，第一条就是最近抽的；今天没抽过就显示牌背
     const cur = all[0] && (all[0].date === today || all[0].id === today) ? all[0] : null;
-    const card = cur ? window.Tarot.CARDS[cur.n] : null;
-    // 刚抽的牌：先渲染背面再翻，才有动画；从菜单进来的直接显示正面
+
+    // 兼容旧记录（只存了 n / reversed 的单张）
+    const curCards = cur ? (cur.cards || [{ n: cur.n, reversed: cur.reversed }]) : [];
+    const spreadKey = App.state.tarotSpread || (cur && cur.spread) || 'three';
+    const def = window.Tarot.SPREADS[spreadKey] || window.Tarot.SPREADS.three;
+    const slots = def.slots;
+    const isOne = slots.length === 1;
+
     const pending = !!App.state.tarotPending;
-    const showFront = !!(cur && card && !pending);
-    const rv = cur ? cur.reversed : false;
+    // 切换牌阵后旧记录张数对不上，先显示牌背等重新抽
+    const sameSpread = !cur || !cur.spread || cur.spread === spreadKey;
+    const showFront = !!(cur && curCards.length && !pending && sameSpread);
     const q = (cur && cur.q) || '';
-    const info = cur && card ? window.Tarot.interpret(q, cur.n, cur.reversed) : null;
+    const info = cur && curCards.length ? window.Tarot.interpretSpread(q, curCards) : null;
     const history = all.filter((x) => x !== cur).slice(0, 8);
     const draftQ = App.state.tarotQ || '';
 
-    const front = card ? `
-        <div class="tc-inner">
-          <div class="tc-face tc-back"><span class="tc-back-sym">🔮</span><span class="tc-back-txt">点一下抽牌</span></div>
-          <div class="tc-face tc-front ${rv ? 'rev' : ''}">
-            <div class="tc-sym">${card.sym}</div>
-            <div class="tc-name">${esc(card.name)}</div>
-            <div class="tc-en">${esc(card.en)}</div>
-            <div class="tc-pos">${rv ? '逆位' : '正位'}</div>
-            <div class="tc-kw">${card.kw.map((k) => esc(k)).join(' · ')}</div>
+    const slotHTML = slots.map((slot, i) => {
+      const c = curCards[i];
+      const card = c ? window.Tarot.CARDS[c.n] : null;
+      const rev = c ? c.reversed : false;
+      return `
+      <div class="tslot">
+        <div class="tarot-card ${isOne ? '' : 'mini'} ${showFront && card ? 'flipped' : ''}">
+          <div class="tc-inner">
+            <div class="tc-face tc-back"><span class="tc-back-sym">🔮</span>${isOne ? '<span class="tc-back-txt">点一下抽牌</span>' : ''}</div>
+            <div class="tc-face tc-front ${rev ? 'rev' : ''}">
+              ${card ? `
+                <div class="tc-sym">${card.sym}</div>
+                <div class="tc-name">${esc(card.name)}</div>
+                ${isOne ? `<div class="tc-en">${esc(card.en)}</div>` : ''}
+                <div class="tc-pos">${rev ? '逆位' : '正位'}</div>
+                ${isOne ? `<div class="tc-kw">${card.kw.map((k) => esc(k)).join(' · ')}</div>` : ''}
+              ` : ''}
+            </div>
           </div>
-        </div>` : `
-        <div class="tc-inner">
-          <div class="tc-face tc-back"><span class="tc-back-sym">🔮</span><span class="tc-back-txt">点一下抽牌</span></div>
-          <div class="tc-face tc-front"></div>
-        </div>`;
+        </div>
+        <div class="tslot-label">${esc(slot.label)}</div>
+      </div>`;
+    }).join('');
 
     return `
     <div class="hero" style="background:linear-gradient(125deg,#F0EAFF,#F6ECFA 55%,#EAF2FF)">
       <div class="deco">🔮</div>
       <h2>问牌</h2>
-      <p>${q ? '这一张，回答你刚才问的那件事' : (cur ? '不带着问题抽，就是看今天整体的状态' : '心里先想一件事，再抽一张')}</p>
+      <p>${q ? '这一把，回答你刚才问的那件事' : (cur ? '不带问题抽，就是看当下整体的能量' : '心里想一件事，再洗牌抽牌')}</p>
     </div>
 
     <div class="card">
       <div class="field" style="margin-bottom:10px">
-        <label>你想问什么？（不填就是看今天的整体状态）</label>
+        <label>你想问什么？（不填就是看整体状态）</label>
         <input class="input" id="tarotQ" placeholder="比如：我要不要辞职做自媒体" value="${esc(draftQ)}" maxlength="80">
       </div>
       <div class="row tarot-chips">
         ${['这件事该不该继续', '我现在该往哪走', '我最近的状态怎么了'].map((s) => `<span class="chip" data-act="fillTarotQ" data-key="${esc(s)}">${esc(s)}</span>`).join('')}
       </div>
+      <div class="row" style="gap:6px;margin-top:11px;align-items:center">
+        <span style="font-size:12px;color:var(--ink-3);flex:0 0 auto">牌阵</span>
+        <span class="chip ${spreadKey === 'one' ? 'active' : ''}" data-act="pickSpread" data-key="one">一张 · 快问快答</span>
+        <span class="chip ${spreadKey === 'three' ? 'active' : ''}" data-act="pickSpread" data-key="three">三张 · 过去现在走向</span>
+      </div>
     </div>
 
-    <div class="tarot-stage">
-      <div class="tarot-card ${showFront ? 'flipped' : ''}" data-act="drawTarot">
-        ${front}
-      </div>
-      <div class="tarot-hint">${showFront ? '再抽一张（换了问题也可以重抽）' : '点牌面翻开'}</div>
+    <div class="tarot-stage" data-act="drawTarot">
+      <div class="tarot-spread ${isOne ? 'one' : 'three'}">${slotHTML}</div>
+      <div class="tarot-hint">${showFront ? '再洗一次（换了问题也可以重抽）' : '点这里洗牌抽牌'}</div>
     </div>
 
     ${info ? `
@@ -563,10 +581,14 @@
             ${info.topic ? `<span class="tq-tag">${esc(info.topic)}</span>` : ''}
           </div>` : ''}
 
-        <div class="tarot-sec">
-          <div class="ts-label">牌在说什么</div>
-          <div class="ts-body">${esc(info.base)}</div>
-        </div>
+        ${info.items.map((it) => `
+          <div class="tread">
+            <div class="tr-head">
+              <span class="tr-badge">${esc(it.label)}</span>
+              <span class="tr-card">${it.card.sym} ${esc(it.card.name)} · ${it.reversed ? '逆位' : '正位'}</span>
+            </div>
+            <div class="ts-body">${esc(it.pre)}${esc(it.text)}</div>
+          </div>`).join('')}
 
         ${info.lens ? `
         <div class="tarot-sec">
@@ -585,16 +607,20 @@
         <div class="card-title">🗓 之前问过的</div>
         <div class="card-sub">回头看会发现，牌在提醒你同一件事</div>
         ${history.map((x) => {
-          const c = window.Tarot.CARDS[x.n];
-          const hq = x.q ? x.q : '今日状态';
+          const cs = x.cards || [{ n: x.n, reversed: x.reversed }];
+          const syms = cs.map((c) => (window.Tarot.CARDS[c.n] || {}).sym || '').join('');
+          const names = cs.map((c) => {
+            const cc = window.Tarot.CARDS[c.n];
+            return cc ? cc.name + (c.reversed ? '逆' : '') : '';
+          }).filter(Boolean).join(' / ');
           return `<div class="tarot-row">
             <span class="tr-date">${String(x.date || x.id).slice(5)}</span>
-            <span class="tr-sym">${c.sym}</span>
-            <span class="tr-name">${esc(c.name)}${x.reversed ? ' · 逆' : ''}</span>
-            <span class="tr-kw">${esc(String(hq).slice(0, 14))}</span>
+            <span class="tr-sym">${syms}</span>
+            <span class="tr-name">${names.length > 12 ? names.slice(0, 12) + '…' : names}</span>
+            <span class="tr-kw">${esc(String(x.q || '整体状态').slice(0, 12))}</span>
           </div>`;
         }).join('')}
-      </div>` : (cur ? `<div class="card-sub" style="text-align:center;margin:4px 0 14px">换个问题再抽一张，这里会攒下你的问牌记录</div>` : '')}
+      </div>` : (cur ? `<div class="card-sub" style="text-align:center;margin:4px 0 14px">换个问题再洗一次，这里会攒下你的问牌记录</div>` : '')}
 
     <div class="tarot-foot">牌是一面镜子，照的是你本来就知道的事。决定权一直在你手上。</div>`;
   }
