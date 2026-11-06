@@ -502,8 +502,12 @@
       .filter((x) => (x.cards && x.cards.length) || window.Tarot.CARDS[x.n])
       .sort((a, b) => String(b.at || b.id).localeCompare(String(a.at || a.id)));
     const today = todayStr();
-    // all 已按抽牌时间倒序，第一条就是最近抽的；今天没抽过就显示牌背
-    const cur = all[0] && (all[0].date === today || all[0].id === today) ? all[0] : null;
+    const viewId = ctx.params && ctx.params.view;
+    // all 已按抽牌时间倒序；指定了历史记录就回看那一条，否则看今天最近的一次
+    const cur = viewId
+      ? (all.find((x) => x.id === viewId) || null)
+      : (all[0] && (all[0].date === today || all[0].id === today) ? all[0] : null);
+    const isHistory = !!(viewId && cur);
 
     // 兼容旧记录（只存了 n / reversed 的单张）
     const curCards = cur ? (cur.cards || [{ n: cur.n, reversed: cur.reversed }]) : [];
@@ -518,6 +522,7 @@
     const showFront = !!(cur && curCards.length && !pending && sameSpread);
     const q = (cur && cur.q) || '';
     const info = cur && curCards.length ? window.Tarot.interpretSpread(q, curCards) : null;
+    const sm = cur && curCards.length ? window.Tarot.summarize(curCards) : null;
     const history = all.filter((x) => x !== cur).slice(0, 8);
     const draftQ = App.state.tarotQ || '';
 
@@ -549,8 +554,14 @@
     <div class="hero" style="background:linear-gradient(125deg,#F0EAFF,#F6ECFA 55%,#EAF2FF)">
       <div class="deco">🔮</div>
       <h2>问牌</h2>
-      <p>${q ? '这一把，回答你刚才问的那件事' : (cur ? '不带问题抽，就是看当下整体的能量' : '心里想一件事，再洗牌抽牌')}</p>
+      <p>${isHistory ? '正在回看之前问过的一次' : (q ? '这一把，回答你刚才问的那件事' : (cur ? '不带问题抽，就是看当下整体的能量' : '心里想一件事，再洗牌抽牌'))}</p>
     </div>
+
+    ${isHistory ? `
+    <div class="tarot-histbar">
+      <span>📖 回看 ${esc(String(cur.date || cur.id).slice(5))} 的记录</span>
+      <span class="thb-back" data-act="backToday">回到今天 ›</span>
+    </div>` : ''}
 
     <div class="card">
       <div class="field" style="margin-bottom:10px">
@@ -596,6 +607,15 @@
             <div class="tr-ask">这张牌在问你：${esc(it.card.ask || '')}</div>
           </div>`).join('')}
 
+        ${sm ? `
+        <div class="tarot-sum">
+          <div class="tsum-head">📌 合起来看</div>
+          ${sm.path && sm.path.length > 1 ? `<div class="tsum-path">${sm.path.map((p, i) => `${i ? '<i>→</i>' : ''}<span>${esc(p)}</span>`).join('')}</div>` : ''}
+          <div class="tsum-trend">${esc(sm.trend)}</div>
+          <div class="tsum-rev">${esc(sm.revHint)}</div>
+          ${sm.keys && sm.keys.length ? `<div class="tsum-keys">${sm.keys.map((k) => `<span class="tk">${esc(k)}</span>`).join('')}</div>` : ''}
+        </div>` : ''}
+
         ${info.lens ? `
         <div class="tarot-sec">
           <div class="ts-label">放到你这件事上</div>
@@ -618,12 +638,15 @@
           const names = cs.map((c) => {
             const cc = window.Tarot.CARDS[c.n];
             return cc ? cc.name + (c.reversed ? '逆' : '') : '';
-          }).filter(Boolean).join(' / ');
-          return `<div class="tarot-row">
-            <span class="tr-date">${String(x.date || x.id).slice(5)}</span>
-            <span class="tr-sym">${syms}</span>
-            <span class="tr-name">${names.length > 12 ? names.slice(0, 12) + '…' : names}</span>
-            <span class="tr-kw">${esc(String(x.q || '整体状态').slice(0, 12))}</span>
+          }).filter(Boolean).join(' · ');
+          return `<div class="tarot-row clickable" data-act="viewTarot" data-id="${esc(x.id)}">
+            <div class="tr-line1">
+              <span class="tr-date">${String(x.date || x.id).slice(5)}</span>
+              <span class="tr-sym">${syms}</span>
+              <span class="tr-count">${cs.length} 张</span>
+            </div>
+            <div class="tr-q">${esc(String(x.q || '看整体状态'))}</div>
+            <div class="tr-names">${esc(names)}</div>
           </div>`;
         }).join('')}
       </div>` : (cur ? `<div class="card-sub" style="text-align:center;margin:4px 0 14px">换个问题再洗一次，这里会攒下你的问牌记录</div>` : '')}

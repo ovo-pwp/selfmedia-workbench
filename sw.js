@@ -1,5 +1,5 @@
 /* Service Worker：静态资源缓存优先，数据接口网络优先并兜底缓存 */
-const VER = 'v13';
+const VER = 'v15';
 const STATIC_CACHE = 'zm-static-' + VER;
 const DATA_CACHE = 'zm-data-' + VER;
 

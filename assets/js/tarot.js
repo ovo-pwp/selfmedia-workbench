@@ -892,5 +892,74 @@
     };
   }
 
-  window.Tarot = { CARDS, SUITS, SPREADS, draw, drawSpread, todayKey, topicOf, interpret, interpretSpread, energyOf };
+  /* 五型的中文说法，用于总结 */
+  const ENERGY_CN = { advance: '推进', pause: '暂停', release: '收尾', choose: '取舍', build: '打底' };
+
+  /* 从第一张的能量走到最后一张的能量，这件事大概是个什么走向 */
+  const TRANSITION = {
+    'advance>advance': '一路都在往前走，势头没断，这种时候别自己踩刹车。',
+    'advance>pause': '先前冲得挺猛，接下来要缓一缓，不是退步，是蓄力。',
+    'advance>release': '推到了某个点，该收的收掉，别硬要它一直往上走。',
+    'advance>choose': '走着走着会碰到一个岔路口，这次必须选一个。',
+    'advance>build': '劲头有了，接下来是把它做成能长期运转的结构。',
+    'pause>advance': '卡了很久的地方开始松动，是时候动一下了。',
+    'pause>pause': '还在原地，急也没用，这段时间就是用来等的。',
+    'pause>release': '停着的这段时间，有些东西自己就散了，不用你去推。',
+    'pause>choose': '停下来的这段时间，其实是在等一个决定。',
+    'pause>build': '慢下来之后反而看清了，可以开始搭架子了。',
+    'release>advance': '旧的清掉了，新的才进得来，这就是在换气。',
+    'release>pause': '刚结束一段，先别急着开下一段，缓一缓。',
+    'release>release': '该结束的正在结束，你要做的是别硬撑。',
+    'release>choose': '放下之后，会面对一个不得不做的选择。',
+    'release>build': '清空之后可以从头搭一个更稳的版本。',
+    'choose>advance': '决定一旦做了，路就通了，剩下的只是走。',
+    'choose>pause': '还没到时候，先别急着选。',
+    'choose>release': '那个选择其实已经有答案了——是放弃。',
+    'choose>choose': '还在纠结里打转，这次可能还是要再选一次。',
+    'choose>build': '选完之后就该动手搭了，别再回头看。',
+    'build>advance': '基础打好了，可以往外推一把。',
+    'build>pause': '打底阶段别急，进度慢是正常的。',
+    'build>release': '基础已经够了，该收的部分收掉。',
+    'build>choose': '架子搭起来了，接下来要做取舍。',
+    'build>build': '还在打基础，这个阶段一天看不出变化。',
+  };
+
+  /** 牌阵总结：把几张牌连起来看，而不是各说各的 */
+  function summarize(cards) {
+    if (!cards || !cards.length) return null;
+    const list = cards.map((c) => ({ ...c, energy: energyOf(c.n) }));
+    const first = list[0].energy;
+    const last = list[list.length - 1].energy;
+    const rev = list.filter((c) => c.reversed).length;
+
+    if (list.length === 1) {
+      // 单张不给"走向"，只给一句定性
+      const map = {
+        advance: '这张牌在推你往前走，别犹豫。',
+        pause: '这张牌让你先停一停，现在不是出手的时候。',
+        release: '这张牌在说：有些东西该结束了。',
+        choose: '这张牌摆出一个选择，你得表态。',
+        build: '这张牌讲的是打基础，急不来。',
+      };
+      return { trend: map[first] || '', revHint: rev ? '逆位，这股能量现在是受阻的。' : '', keys: [] };
+    }
+
+    const trend = TRANSITION[first + '>' + last] || TRANSITION['build>build'];
+    const revHint = rev === 0
+      ? '三张都是正位，能量是顺的，想做什么可以放手做。'
+      : rev === 1
+        ? '有一张逆位，说明中间有个卡点——不是不能做，是要绕一下。'
+        : rev === 2
+          ? '两张逆位，阻力比较明显，先把卡住的那处处理好再往下走。'
+          : '三张全逆，说明现在更像是在内部调整，先别急着对外行动。';
+
+    const keys = list.map((c) => {
+      const card = CARDS[c.n];
+      return card ? (card.kw && card.kw[0] ? card.kw[0] : '') : '';
+    }).filter(Boolean);
+
+    return { trend, revHint, keys, path: list.map((c) => ENERGY_CN[c.energy]) };
+  }
+
+  window.Tarot = { CARDS, SUITS, SPREADS, draw, drawSpread, todayKey, topicOf, interpret, interpretSpread, energyOf, summarize };
 })();

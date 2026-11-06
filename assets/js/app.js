@@ -868,6 +868,17 @@
       go('tarot', {}, true);
     },
 
+    viewTarot(el) {
+      const id = el.dataset.id;
+      if (!id) return;
+      App.state.tarotQ = '';
+      go('tarot', { view: id }, true);
+    },
+
+    backToday() {
+      go('tarot', {}, true);
+    },
+
     async drawTarot() {
       if (App.state.tarotBusy) return;
       App.state.tarotBusy = true;
