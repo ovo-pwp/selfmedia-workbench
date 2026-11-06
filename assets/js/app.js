@@ -169,7 +169,7 @@
   /* ---------- 路由 ---------- */
   const TITLES = {
     home: '首页选题', write: '写文案', money: '搞钱项目', praise: '赞美日记',
-    soul: '心灵感悟', tarot: '今日牌运', plan: '成长计划', posts: '发布台账', books: '读书',
+    soul: '心灵感悟', tarot: '问牌', plan: '成长计划', posts: '发布台账', books: '读书',
     skills: '技能学习', docs: '我的文档', settings: '设置',
   };
 
@@ -844,10 +844,21 @@
     },
 
     /* --- 设置 --- */
-    /* --- 今日牌运 --- */
+    /* --- 问牌 --- */
+    fillTarotQ(el) {
+      const v = el.dataset.key || '';
+      const input = document.getElementById('tarotQ');
+      if (input) input.value = v;
+      App.state.tarotQ = v;
+    },
+
     async drawTarot() {
       if (App.state.tarotBusy) return;
       App.state.tarotBusy = true;
+      const input = document.getElementById('tarotQ');
+      const q = input ? input.value.trim().slice(0, 80) : (App.state.tarotQ || '');
+      App.state.tarotQ = q;
+
       const el = document.querySelector('.tarot-card');
       // 已经翻开的，先翻回去再抽
       if (el && el.classList.contains('flipped')) {
@@ -856,7 +867,8 @@
       }
       const r = Tarot.draw();
       await Store.put('tarot', {
-        id: Tarot.todayKey(), n: r.card.n, reversed: r.reversed, at: new Date().toISOString(),
+        id: Store.uid(), date: Tarot.todayKey(), n: r.card.n, reversed: r.reversed,
+        q, at: new Date().toISOString(),
       });
       App.state.tarotPending = true;
       await go('tarot', {}, true);
@@ -867,7 +879,9 @@
         const c = document.querySelector('.tarot-card');
         if (c) c.classList.add('flipped');
         const hint = document.querySelector('.tarot-hint');
-        if (hint) hint.textContent = '再点一次，换一张';
+        if (hint) hint.textContent = '再抽一张（换了问题也可以重抽）';
+        const stage = document.querySelector('.tarot-stage');
+        if (stage) stage.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }));
     },
 

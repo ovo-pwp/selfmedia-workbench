@@ -498,15 +498,21 @@
   /* ================= 今日牌运 ================= */
 
   async function tarotView(ctx) {
-    const all = (await Store.all('tarot')).sort((a, b) => String(b.id).localeCompare(String(a.id)));
+    const all = (await Store.all('tarot'))
+      .filter((x) => window.Tarot.CARDS[x.n])
+      .sort((a, b) => String(b.at || b.id).localeCompare(String(a.at || a.id)));
     const today = todayStr();
-    const cur = all.find((x) => x.id === today);
+    // all 已按抽牌时间倒序，第一条就是最近抽的；今天没抽过就显示牌背
+    const cur = all[0] && (all[0].date === today || all[0].id === today) ? all[0] : null;
     const card = cur ? window.Tarot.CARDS[cur.n] : null;
     // 刚抽的牌：先渲染背面再翻，才有动画；从菜单进来的直接显示正面
     const pending = !!App.state.tarotPending;
     const showFront = !!(cur && card && !pending);
     const rv = cur ? cur.reversed : false;
-    const recent = all.filter((x) => x.id !== today).slice(0, 7);
+    const q = (cur && cur.q) || '';
+    const info = cur && card ? window.Tarot.interpret(q, cur.n, cur.reversed) : null;
+    const history = all.filter((x) => x !== cur).slice(0, 8);
+    const draftQ = App.state.tarotQ || '';
 
     const front = card ? `
         <div class="tc-inner">
@@ -527,42 +533,68 @@
     return `
     <div class="hero" style="background:linear-gradient(125deg,#F0EAFF,#F6ECFA 55%,#EAF2FF)">
       <div class="deco">🔮</div>
-      <h2>今日牌运</h2>
-      <p>${cur ? '今天已经抽过了 · 想换一张也可以再抽' : '抽一张，看看今天该往哪走'}</p>
+      <h2>问牌</h2>
+      <p>${q ? '这一张，回答你刚才问的那件事' : (cur ? '不带着问题抽，就是看今天整体的状态' : '心里先想一件事，再抽一张')}</p>
+    </div>
+
+    <div class="card">
+      <div class="field" style="margin-bottom:10px">
+        <label>你想问什么？（不填就是看今天的整体状态）</label>
+        <input class="input" id="tarotQ" placeholder="比如：我要不要辞职做自媒体" value="${esc(draftQ)}" maxlength="80">
+      </div>
+      <div class="row tarot-chips">
+        ${['这件事该不该继续', '我现在该往哪走', '我最近的状态怎么了'].map((s) => `<span class="chip" data-act="fillTarotQ" data-key="${esc(s)}">${esc(s)}</span>`).join('')}
+      </div>
     </div>
 
     <div class="tarot-stage">
       <div class="tarot-card ${showFront ? 'flipped' : ''}" data-act="drawTarot">
         ${front}
       </div>
-      <div class="tarot-hint">${showFront ? '再点一次，换一张' : '点牌面翻开'}</div>
+      <div class="tarot-hint">${showFront ? '再抽一张（换了问题也可以重抽）' : '点牌面翻开'}</div>
     </div>
 
-    ${cur && card ? `
+    ${info ? `
       <div class="card">
-        <div class="card-title">📖 今日解读</div>
-        <div style="font-size:14px;line-height:1.9;color:var(--ink-1);margin-top:6px">${esc(rv ? card.rev : card.up)}</div>
+        ${info.question ? `
+          <div class="tarot-q">
+            <span class="tq-label">你问的是</span>
+            <span class="tq-text">${esc(info.question)}</span>
+            ${info.topic ? `<span class="tq-tag">${esc(info.topic)}</span>` : ''}
+          </div>` : ''}
+
+        <div class="tarot-sec">
+          <div class="ts-label">牌在说什么</div>
+          <div class="ts-body">${esc(info.base)}</div>
+        </div>
+
+        ${info.lens ? `
+        <div class="tarot-sec">
+          <div class="ts-label">放到你这件事上</div>
+          <div class="ts-body">${esc(info.lens)}</div>
+        </div>` : ''}
+
         <div class="tarot-act">
-          <span class="ta-label">今天就做这一件</span>
-          <span class="ta-text">${esc(card.act)}</span>
+          <span class="ta-label">可以试的一步</span>
+          <span class="ta-text">${esc(info.action)}</span>
         </div>
       </div>` : ''}
 
-    ${recent.length ? `
+    ${history.length ? `
       <div class="card">
-        <div class="card-title">🗓 之前抽到的</div>
+        <div class="card-title">🗓 之前问过的</div>
         <div class="card-sub">回头看会发现，牌在提醒你同一件事</div>
-        ${recent.map((x) => {
+        ${history.map((x) => {
           const c = window.Tarot.CARDS[x.n];
-          if (!c) return '';
+          const hq = x.q ? x.q : '今日状态';
           return `<div class="tarot-row">
-            <span class="tr-date">${String(x.id).slice(5)}</span>
+            <span class="tr-date">${String(x.date || x.id).slice(5)}</span>
             <span class="tr-sym">${c.sym}</span>
             <span class="tr-name">${esc(c.name)}${x.reversed ? ' · 逆' : ''}</span>
-            <span class="tr-kw">${esc((c.kw || []).slice(0, 2).join(' '))}</span>
+            <span class="tr-kw">${esc(String(hq).slice(0, 14))}</span>
           </div>`;
         }).join('')}
-      </div>` : (cur ? `<div class="card-sub" style="text-align:center;margin:4px 0 14px">明天再来抽一张，这里会攒下你的牌运记录</div>` : '')}
+      </div>` : (cur ? `<div class="card-sub" style="text-align:center;margin:4px 0 14px">换个问题再抽一张，这里会攒下你的问牌记录</div>` : '')}
 
     <div class="tarot-foot">牌是一面镜子，照的是你本来就知道的事。决定权一直在你手上。</div>`;
   }

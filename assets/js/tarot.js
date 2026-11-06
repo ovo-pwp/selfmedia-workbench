@@ -169,10 +169,74 @@
     '决定权一直在你手上，牌只是陪你想一想。',
   ];
 
-  function todayKey() {
+  /* ---------- 问卜：问题分类 ---------- */
+  const TOPICS = [
+    { key: 'career', name: '工作 / 搞钱', re: /工作|事业|赚钱|副业|项目|客户|老板|领导|升职|跳槽|离职|辞职|创业|收入|工资|offer|面试|公司|甲方|合作|变现|账号|做号|这个号|涨粉|粉丝|流量|接单/i },
+    { key: 'love', name: '感情', re: /感情|喜欢|爱|恋爱|结婚|分手|复合|对象|男朋友|女朋友|老公|老婆|暧昧|相亲|告白|暗恋|前任/i },
+    { key: 'relation', name: '人际 / 家庭', re: /朋友|同事|家人|父母|妈|爸|孩子|亲戚|关系|吵架|误会|沟通|婆媳|邻居|催婚/i },
+    { key: 'choice', name: '选择 / 决定', re: /要不要|该不该|是否|选|决定|纠结|继续|放弃|坚持|留下|离开|还是/i },
+    { key: 'self', name: '自己 / 状态', re: /焦虑|迷茫|累|内耗|自信|方向|意义|状态|情绪|坚持不下去|抑郁|孤独|自我|提不起劲|没劲|不想动|没动力|低落|空虚|丧|打不起精神/i },
+    { key: 'other', name: '这件事', re: /[\s\S]*/ },
+  ];
+
+  /* ---------- 牌的能量倾向（决定怎么落到问题上） ---------- */
+  const ENERGY = {
+    0: 'advance', 1: 'advance', 2: 'pause', 3: 'build', 4: 'build', 5: 'build',
+    6: 'choose', 7: 'advance', 8: 'advance', 9: 'pause', 10: 'build', 11: 'choose',
+    12: 'pause', 13: 'release', 14: 'build', 15: 'release', 16: 'release',
+    17: 'build', 18: 'pause', 19: 'advance', 20: 'choose', 21: 'advance',
+  };
+
+  /* ---------- 6 类问题 × 5 种倾向 的解读矩阵 ---------- */
+  const LENS = {
+    career: {
+      advance: { view: '牌面在推你往前走，这件事已经有起势了，别再等「完全准备好」。', do: '今天把最想推进的那一步做掉，做完再评估。' },
+      pause: { view: '现在还不是出手的时候，你缺的不是勇气，是信息。', do: '先别拍板，把这件想知道的事问清楚一件。' },
+      release: { view: '这条路里有一部分该停下来了，你其实早就知道是哪部分。', do: '列出最消耗你的一项，这个月先砍掉它。' },
+      choose: { view: '这题没有标准答案，只有「更像你」的那个。', do: '两个选项各写三条要付的代价，看哪个你更愿意承担。' },
+      build: { view: '决定成败的是结构，不是灵感。', do: '把这件事拆成三步，今天只做第一步。' },
+    },
+    love: {
+      advance: { view: '感情里主动一点不吃亏，藏着反而容易错过。', do: '把那句憋了很久的话，用最笨的方式说出来。' },
+      pause: { view: '现在追问只会把人推远，你越急对方越退。', do: '今天先不主动联系，把注意力放回自己身上。' },
+      release: { view: '某个反复消耗你的模式该结束了。', do: '写下让你委屈过三次的同一件事，看看是不是一个模式。' },
+      choose: { view: '喜欢和合适，你得诚实选一个，不能都要。', do: '问自己一句：一年后还愿意为这个选择买单吗。' },
+      build: { view: '感情靠日常攒，不靠一次表态。', do: '做一件很小但具体的事：一条消息、一顿饭、一句谢谢。' },
+    },
+    relation: {
+      advance: { view: '这段关系值得你多走一步，别端着。', do: '主动开一次口，哪怕只是问一句最近怎么样。' },
+      pause: { view: '先别急着解释，对方现在听不进去。', do: '搁两天，等情绪退了再谈这件事。' },
+      release: { view: '有些期待该收回来了，你不是非要被理解。', do: '把「他应该」换成「他就是这样」，再看你还愿不愿意。' },
+      choose: { view: '你要选的是界限，不是对错。', do: '写下你能退让的底线，就一条，然后守住它。' },
+      build: { view: '关系里的安全感来自可预期，不是惊喜。', do: '定一个你们都能做到的小约定。' },
+    },
+    choice: {
+      advance: { view: '这个方向是对的，别再反复验证了。', do: '今天把决定说出口，说给自己听也算数。' },
+      pause: { view: '现在是「等一等」的时刻，不是「快一点」的时刻。', do: '给这个决定设一个截止日，在那之前不许自己再想。' },
+      release: { view: '有一个选项其实已经结束了，你在拖。', do: '把已经投入的成本写下来，然后问一次：还继续吗。' },
+      choose: { view: '你纠结的其实不是选项，是自己更看重什么。', do: '写出你最不能失去的那一样，答案就在那。' },
+      build: { view: '不用一步到位，先搭一个能跑的版本。', do: '选一个不完美但今天就能开始的方案。' },
+    },
+    self: {
+      advance: { view: '你的状态在回升，别用旧眼光看自己。', do: '做一件能立刻看到结果的小事，把信心攒回来。' },
+      pause: { view: '累了就是累了，不需要什么重大理由。', do: '今天晚上什么都不干，早点睡。' },
+      release: { view: '扛着的那件事，其实可以放下。', do: '对自己说一句「我搞不定」，看看天会不会塌。' },
+      choose: { view: '你在两个自己之间做选择。', do: '写下三个月后想成为的样子，再倒推今天做什么。' },
+      build: { view: '稳定比爆发更有用，你需要的是一套能持续的节奏。', do: '定一个你明天也做得到的量，只做那么多。' },
+    },
+    other: {
+      advance: { view: '顺着这个势头走，别自己刹车。', do: '把想到的第一件事做掉，别排序。' },
+      pause: { view: '先别催答案，它还没到时候。', do: '给它三天，三天后再看这件事。' },
+      release: { view: '该结束的部分，结束掉才轻。', do: '删掉一件拖了很久、想起来就累的事。' },
+      choose: { view: '两件事里，选更像你的那个。', do: '各写三条理由，今天定，定完不许回头。' },
+      build: { view: '把想法变成一个具体动作，它才有重量。', do: '写下来，越具体越好，写到能立刻执行。' },
+    },
+  };
+
+  const todayKey = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
+  };
 
   /** 抽一张：随机牌 + 随机正逆位 */
   function draw() {
@@ -186,5 +250,29 @@
     };
   }
 
-  window.Tarot = { CARDS, draw, todayKey };
+  /** 识别问题类型 */
+  function topicOf(question) {
+    const q = String(question || '').trim();
+    if (!q) return null;
+    return TOPICS.find((t) => t.re.test(q)) || TOPICS[TOPICS.length - 1];
+  }
+
+  /** 针对具体问题生成解读；没问题就只给通用牌意 */
+  function interpret(question, n, reversed) {
+    const card = CARDS[n];
+    if (!card) return null;
+    const q = String(question || '').trim().slice(0, 80);
+    const topic = topicOf(q);
+    const energy = ENERGY[n] || 'advance';
+    const lens = topic ? (LENS[topic.key] && LENS[topic.key][energy]) : null;
+    return {
+      question: q,
+      topic: topic ? topic.name : '',
+      base: reversed ? card.rev : card.up,
+      lens: lens ? lens.view : '',
+      action: lens ? lens.do : card.act,
+    };
+  }
+
+  window.Tarot = { CARDS, draw, todayKey, topicOf, interpret };
 })();
