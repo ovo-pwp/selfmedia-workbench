@@ -189,6 +189,17 @@
     const v = document.getElementById('view');
     v.innerHTML = `<div class="skeleton" style="height:130px;margin-bottom:14px"></div><div class="skeleton" style="height:90px;margin-bottom:14px"></div><div class="skeleton" style="height:90px"></div>`;
     try {
+      // 保险：HTML 更新了但 JS 还是旧的（缓存没对齐）时，自动重新载入一次，
+      // 而不是甩给用户一个 "xxx is not a function" 的白屏
+      if (typeof window.Views[view] !== 'function') {
+        if (!sessionStorage.getItem('view-mismatch')) {
+          sessionStorage.setItem('view-mismatch', '1');
+          v.innerHTML = '<div class="empty" style="padding:48px 20px"><div class="big">🔄</div>正在更新到最新版…</div>';
+          setTimeout(() => location.reload(), 260);
+          return;
+        }
+        throw new Error('页面文件版本不一致，请按 Ctrl+F5 强制刷新一次');
+      }
       const html = await window.Views[view]({
         daily: App.state.daily,
         hot: App.state.hot,

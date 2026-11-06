@@ -1,5 +1,5 @@
 /* Service Worker：静态资源缓存优先，数据接口网络优先并兜底缓存 */
-const VER = 'v10';
+const VER = 'v11';
 const STATIC_CACHE = 'zm-static-' + VER;
 const DATA_CACHE = 'zm-data-' + VER;
 
@@ -58,15 +58,17 @@ self.addEventListener('fetch', (e) => {
   // 其余（HTML / JS / CSS / 图标）：网络优先。
   // 之前是缓存优先，导致改了代码用户要刷新两次才看得到，体验很差。
   // 断开网络时自动回退到缓存，离线依然可用。
+  // 缓存 key 去掉 ?v= 查询串：版本号只用来穿透 HTTP 缓存，不该污染 SW 缓存。
+  const key = url.origin + url.pathname;
   e.respondWith(
     fetch(req).then((res) => {
       if (res && res.ok) {
         const copy = res.clone();
-        caches.open(STATIC_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        caches.open(STATIC_CACHE).then((c) => c.put(key, copy)).catch(() => {});
       }
       return res;
     }).catch(() =>
-      caches.match(req).then((hit) => hit || caches.match('./index.html') || caches.match('./'))
+      caches.match(key).then((hit) => hit || caches.match('./index.html') || caches.match('./'))
     )
   );
 });

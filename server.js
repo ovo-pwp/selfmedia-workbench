@@ -219,6 +219,27 @@ function serveStatic(req, res, urlPath) {
     let ctype = MIME[ext] || 'application/octet-stream';
     // PWA manifest 必须带 manifest+json，浏览器才会认
     if (p.endsWith('manifest.json')) ctype = 'application/manifest+json; charset=utf-8';
+
+    // HTML 里把 __V__ 换成静态资源的真实修改时间，
+    // 让每次改代码后 URL 都变，彻底绕开浏览器/SW 的旧缓存（否则新旧文件混用会白屏）
+    if (isHTML) {
+      fs.readFile(file, 'utf8', (e2, html) => {
+        if (e2) { res.writeHead(500); res.end('read error'); return; }
+        let ver = '0';
+        try { ver = String(Math.floor(fs.statSync(path.join(ROOT, 'assets/js/app.js')).mtimeMs)); } catch (x) { /* 忽略 */ }
+        const body = html.replace(/__V__/g, ver);
+        res.writeHead(200, {
+          'Content-Type': ctype,
+          'Cache-Control': 'no-cache',
+          'Service-Worker-Allowed': '/',
+          'Access-Control-Allow-Origin': '*',
+          'Content-Length': Buffer.byteLength(body),
+        });
+        res.end(body);
+      });
+      return;
+    }
+
     res.writeHead(200, {
       'Content-Type': ctype,
       // no-cache：每次回源验证（没改动就是 304，很快），避免改了代码用户还看旧版
