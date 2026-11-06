@@ -226,7 +226,22 @@ function serveStatic(req, res, urlPath) {
       fs.readFile(file, 'utf8', (e2, html) => {
         if (e2) { res.writeHead(500); res.end('read error'); return; }
         let ver = '0';
-        try { ver = String(Math.floor(fs.statSync(path.join(ROOT, 'assets/js/app.js')).mtimeMs)); } catch (x) { /* 忽略 */ }
+        try {
+          // 取所有静态资源里最新的修改时间——改任何一个文件，版本号都会变
+          const watch = [
+            'assets/css/style.css',
+            'assets/js/store.js', 'assets/js/generator.js', 'assets/js/sensitive.js',
+            'assets/js/tarot.js', 'assets/js/views.js', 'assets/js/app.js',
+          ];
+          let max = 0;
+          for (const f of watch) {
+            try {
+              const m = fs.statSync(path.join(ROOT, f)).mtimeMs;
+              if (m > max) max = m;
+            } catch (x) { /* 文件不存在就跳过 */ }
+          }
+          ver = String(Math.floor(max));
+        } catch (x) { /* 忽略 */ }
         const body = html.replace(/__V__/g, ver);
         res.writeHead(200, {
           'Content-Type': ctype,

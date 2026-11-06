@@ -587,7 +587,13 @@
               <span class="tr-badge">${esc(it.label)}</span>
               <span class="tr-card">${it.card.sym} ${esc(it.card.name)} · ${it.reversed ? '逆位' : '正位'}</span>
             </div>
+            <div class="tr-img">画面：${esc(it.card.img || '')}</div>
+            ${it.card.suit && window.Tarot.SUITS && window.Tarot.SUITS[it.card.suit]
+              ? `<div class="tr-suit">${esc(it.card.suit)}组 · ${window.Tarot.SUITS[it.card.suit].el}元素 · ${esc(window.Tarot.SUITS[it.card.suit].theme)}</div>`
+              : ''}
+            <div class="tr-core">${esc(it.card.core || '')}</div>
             <div class="ts-body">${esc(it.pre)}${esc(it.text)}</div>
+            <div class="tr-ask">这张牌在问你：${esc(it.card.ask || '')}</div>
           </div>`).join('')}
 
         ${info.lens ? `
