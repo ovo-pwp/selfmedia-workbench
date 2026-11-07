@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>暂时连不上网</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #F3EEFF 0%, #FDEFF5 55%, #EAF7F0 100%);
+    color: #3B3355;
+  }
+  .wrap {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 32px 28px calc(32px + env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  .face { font-size: 64px; line-height: 1; margin-bottom: 18px; }
+  h1 { font-size: 20px; margin: 0 0 10px; font-weight: 700; }
+  p { font-size: 14px; line-height: 1.75; color: #6B6285; margin: 0 0 26px; }
+  .btn {
+    appearance: none; border: none; cursor: pointer;
+    padding: 13px 40px; border-radius: 999px;
+    font-size: 15px; font-weight: 700; color: #fff;
+    background: linear-gradient(135deg, #8B6FE8, #EF7FA6);
+    box-shadow: 0 8px 20px rgba(139, 111, 232, .32);
+  }
+  .btn:active { transform: scale(.97); }
+  .tip { margin-top: 22px; font-size: 12px; color: #9B93B3; line-height: 1.9; }
+  .card {
+    background: rgba(255,255,255,.72);
+    border-radius: 20px; padding: 30px 24px;
+    box-shadow: 0 10px 30px rgba(139, 111, 232, .12);
+    max-width: 380px; width: 100%;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="face">🌧️</div>
+    <h1>现在没网，或服务器睡着了</h1>
+    <p>已经写过的东西都存在手机本地，一条没丢。<br>连上网络后点下面按钮就好。</p>
+    <button class="btn" onclick="retry()">🔄 重新连接</button>
+    <div class="tip">连的是 WiFi 或流量吗？<br>有时关掉再打开一下网络就好了。</div>
+  </div>
+</div>
+<script>
+  function retry() {
+    try {
+      if (window.AndroidBridge && AndroidBridge.retry) { AndroidBridge.retry(); return; }
+    } catch (e) {}
+    location.reload();
+  }
+</script>
+</body>
+</html>

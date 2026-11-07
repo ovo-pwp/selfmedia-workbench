@@ -796,6 +796,10 @@
         <b>安卓（Chrome/Edge）</b>：右上角 ⋮ →「安装应用」或「添加到主屏幕」<br>
         <span style="color:var(--ink-3)">装好后有独立图标，全屏打开，跟 App 一样。</span>
       </div>
+      <div class="row" style="margin-top:12px">
+        <a class="btn btn-primary" href="/apk" download style="text-decoration:none">⬇️ 下载安卓安装包（APK）</a>
+      </div>
+      <div class="card-sub" style="margin-top:8px">APK 里的数据单独存一份，和浏览器不互通；只想要个桌面图标的话，用上面两种方式更省事。</div>
     </div>
 
     <div class="card" style="background:var(--pink-100);border-color:var(--pink-200)">

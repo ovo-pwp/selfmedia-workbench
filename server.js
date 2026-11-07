@@ -77,6 +77,7 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
+  '.apk': 'application/vnd.android.package-archive',
 };
 
 let hotCache = { at: 0, data: null };
@@ -205,6 +206,13 @@ function scheduleGen() {
 function serveStatic(req, res, urlPath) {
   let p = decodeURIComponent(urlPath.split('?')[0]);
   if (p === '/' || p === '') p = '/index.html';
+  // android/ 是打包源码，里面有签名私钥，绝不能当静态文件发出去
+  const lower = p.toLowerCase();
+  if (lower.startsWith('/android/') || lower.endsWith('.keystore') || lower.endsWith('/build.sh')) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('404 Not Found');
+    return;
+  }
   const file = path.join(ROOT, p);
   // 防目录穿越
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end('forbidden'); return; }
@@ -305,6 +313,19 @@ const server = http.createServer(async (req, res) => {
       genHour: GEN_HOUR,
       genLast,
     });
+  }
+
+  // 固定下载入口：手机点一下就能装（文件名带中文，用 RFC 5987 传）
+  if (u.pathname === '/apk' || u.pathname === '/apk/') {
+    const apk = fs.readdirSync(ROOT).find((f) => f.endsWith('.apk'));
+    if (!apk) return sendJSON(res, 404, { error: 'no apk' });
+    const buf = fs.readFileSync(path.join(ROOT, apk));
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Length': buf.length,
+      'Content-Disposition': "attachment; filename=\"zimeiti.apk\"; filename*=UTF-8''" + encodeURIComponent(apk),
+    });
+    return res.end(buf);
   }
 
   serveStatic(req, res, req.url);

@@ -31,3 +31,8 @@ data/history/
 
 # 手工稿覆盖层里可能含个人素材，本机保留、按需提交
 # data/daily.override.json
+
+# Android 签名私钥，绝不能进公开仓库
+android/*.keystore
+android/*.jks
+*.keystore
