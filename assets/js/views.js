@@ -566,7 +566,7 @@
     <div class="card">
       <div class="field" style="margin-bottom:10px">
         <label>你想问什么？（不填就是看整体状态）</label>
-        <input class="input" id="tarotQ" placeholder="比如：我要不要辞职做自媒体" value="${esc(draftQ)}" maxlength="80">
+        <input class="input" id="tarotQ" placeholder="比如：我要不要换一份工作" value="${esc(draftQ)}" maxlength="80">
       </div>
       <div class="row tarot-chips">
         ${['这件事该不该继续', '我现在该往哪走', '我最近的状态怎么了'].map((s) => `<span class="chip" data-act="fillTarotQ" data-key="${esc(s)}">${esc(s)}</span>`).join('')}

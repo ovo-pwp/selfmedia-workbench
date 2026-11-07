@@ -1,7 +1,7 @@
 {
-  "name": "我的小工作台 · 自媒体",
-  "short_name": "创作台",
-  "description": "每日选题、爆款文案、搞钱项目、成长打卡",
+  "name": "我的小工作台",
+  "short_name": "工作台",
+  "description": "个人工作台 · 每日选题 / 文案 / 搞钱 / 成长打卡",
   "start_url": "./index.html?sharecode=KLEYZT3KBE",
   "scope": "./",
   "display": "standalone",

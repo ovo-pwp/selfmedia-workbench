@@ -317,13 +317,19 @@ const server = http.createServer(async (req, res) => {
 
   // 固定下载入口：手机点一下就能装（文件名带中文，用 RFC 5987 传）
   if (u.pathname === '/apk' || u.pathname === '/apk/') {
-    const apk = fs.readdirSync(ROOT).find((f) => f.endsWith('.apk'));
-    if (!apk) return sendJSON(res, 404, { error: 'no apk' });
+    // 部署是增量上传，旧的 apk 可能还留在服务器上，优先用新命名的那个
+    const apks = fs.readdirSync(ROOT).filter((f) => f.endsWith('.apk'));
+    if (!apks.length) return sendJSON(res, 404, { error: 'no apk' });
+    const apk = apks.find((f) => f.includes('工作台'))
+      || apks.sort((a, b) => {
+        try { return fs.statSync(path.join(ROOT, b)).mtimeMs - fs.statSync(path.join(ROOT, a)).mtimeMs; }
+        catch (e) { return 0; }
+      })[0];
     const buf = fs.readFileSync(path.join(ROOT, apk));
     res.writeHead(200, {
       'Content-Type': 'application/vnd.android.package-archive',
       'Content-Length': buf.length,
-      'Content-Disposition': "attachment; filename=\"zimeiti.apk\"; filename*=UTF-8''" + encodeURIComponent(apk),
+      'Content-Disposition': "attachment; filename=\"workbench.apk\"; filename*=UTF-8''" + encodeURIComponent(apk),
     });
     return res.end(buf);
   }

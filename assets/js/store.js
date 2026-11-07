@@ -122,7 +122,7 @@
   async function exportAll() {
     const dump = { _type: 'zi-meiti-backup', _ver: 1, _at: new Date().toISOString(), data: {} };
     for (const s of STORES) dump.data[s] = await Store.all(s);
-    download(`创作台备份-${stamp()}.json`, JSON.stringify(dump, null, 2), 'application/json');
+    download(`工作台备份-${stamp()}.json`, JSON.stringify(dump, null, 2), 'application/json');
     return true;
   }
 
@@ -144,7 +144,7 @@
       Store.all('books'), Store.all('skills'), Store.all('posts'),
     ]);
     const L = [];
-    L.push(`# 我的创作台 · 全量导出\n\n> 导出时间：${new Date().toLocaleString('zh-CN')}\n`);
+    L.push(`# 我的工作台 · 全量导出\n\n> 导出时间：${new Date().toLocaleString('zh-CN')}\n`);
 
     if (docs.length) {
       L.push('\n---\n\n# 📄 我的文档\n');
@@ -195,7 +195,7 @@
         L.push(`| ${p.date || ''} | ${p.title || ''} | ${PLATFORM_NAME[p.platform] || p.platform || ''} | ${p.views || 0} | ${p.likes || 0} |\n`);
       }
     }
-    download(`创作台全文-${stamp()}.md`, L.join(''), 'text/markdown;charset=utf-8');
+    download(`工作台全文-${stamp()}.md`, L.join(''), 'text/markdown;charset=utf-8');
     return true;
   }
 

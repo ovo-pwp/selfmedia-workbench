@@ -38,5 +38,5 @@ PY
 "$BT/zipalign.exe" -f -p 4 withdex.apk aligned.apk
 cmd //c "D:\\android-sdk-zmt\\bt35\\android-15\\apksigner.bat sign --ks D:\\zmt-build\\zimeiti.keystore --ks-pass pass:zimeiti2026 --key-pass pass:zimeiti2026 --ks-key-alias zimeiti --out D:\\zmt-build\\app.apk D:\\zmt-build\\aligned.apk"
 
-cp "$B/app.apk" "$OUT/创作台-v1.0.apk"
-echo "✅ $OUT/创作台-v1.0.apk"
+cp "$B/app.apk" "$OUT/工作台-v1.0.apk"
+echo "✅ $OUT/工作台-v1.0.apk"
