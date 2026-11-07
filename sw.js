@@ -1,5 +1,5 @@
 /* Service Worker：静态资源缓存优先，数据接口网络优先并兜底缓存 */
-const VER = 'v17';
+const VER = 'v26';
 const STATIC_CACHE = 'zm-static-' + VER;
 const DATA_CACHE = 'zm-data-' + VER;
 
@@ -10,7 +10,10 @@ const STATIC_FILES = [
   './assets/js/store.js',
   './assets/js/generator.js',
   './assets/js/sensitive.js',
+  './assets/js/almanac.js',
+  './assets/js/ics.js',
   './assets/js/tarot.js',
+  './assets/js/pet.js',
   './assets/js/views.js',
   './assets/js/app.js',
   './manifest.json?sharecode=KLEYZT3KBE',

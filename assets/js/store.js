@@ -3,8 +3,8 @@
   'use strict';
 
   const DB_NAME = 'zi-meiti-workbench';
-  const DB_VER = 2; // v2：新增 tarot 集合（每日牌运）
-  const STORES = ['docs', 'praise', 'soul', 'plans', 'books', 'skills', 'posts', 'favs', 'kv', 'tarot'];
+  const DB_VER = 4; // v4：新增 reminders 集合（提醒 + 每日记录）
+  const STORES = ['docs', 'praise', 'soul', 'plans', 'books', 'skills', 'posts', 'favs', 'kv', 'tarot', 'topics', 'reminders'];
 
   let dbp = null;
 
@@ -139,9 +139,9 @@
   }
 
   async function exportMarkdown() {
-    const [docs, praise, soul, plans, books, skills, posts] = await Promise.all([
+    const [docs, praise, soul, plans, books, skills, posts, topics, reminders] = await Promise.all([
       Store.all('docs'), Store.all('praise'), Store.all('soul'), Store.all('plans'),
-      Store.all('books'), Store.all('skills'), Store.all('posts'),
+      Store.all('books'), Store.all('skills'), Store.all('posts'), Store.all('topics'), Store.all('reminders'),
     ]);
     const L = [];
     L.push(`# 我的工作台 · 全量导出\n\n> 导出时间：${new Date().toLocaleString('zh-CN')}\n`);
@@ -185,6 +185,33 @@
       for (const s of skills) {
         L.push(`\n## ${s.name}\n\n- 累计：${s.hours || 0} 小时 · 打卡 ${(s.logs || []).length} 次\n`);
         (s.logs || []).forEach((l) => L.push(`- ${l.date}：${l.text}（${l.hours || 0}h）\n`));
+      }
+    }
+    if (topics.length) {
+      const ST = { todo: '待写', doing: '在写', done: '已发' };
+      L.push('\n---\n\n# 📌 选题池\n');
+      topics.sort((a, b) => String(a.scheduledDate || '9999').localeCompare(String(b.scheduledDate || '9999')));
+      for (const t of topics) {
+        const sc = t.scores || {};
+        L.push(`\n## ${t.title}\n`);
+        L.push(`\n- 状态：${ST[t.status] || '待写'} · 排期：${t.scheduledDate || '未排'} · 打分：${['need', 'comp', 'extend'].filter((k) => sc[k]).length}/3\n`);
+        if (t.note) L.push(`- 备注：${t.note}\n`);
+      }
+    }
+    if (reminders.length) {
+      const rem = reminders.filter((r) => r.kind !== 'note');
+      const notes = reminders.filter((r) => r.kind === 'note');
+      if (rem.length) {
+        L.push('\n---\n\n# ⏰ 提醒\n');
+        rem.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        for (const r of rem) {
+          L.push(`\n- ${r.done ? '✅' : '☐'} ${r.date || ''}${r.time ? ' ' + r.time : ''} · ${r.title}${r.repeat && r.repeat !== 'none' ? ' · ' + r.repeat : ''}${r.note ? '\n  ' + r.note : ''}\n`);
+        }
+      }
+      if (notes.length) {
+        L.push('\n---\n\n# 📝 记录\n');
+        notes.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        for (const n of notes) L.push(`\n### ${n.date}\n\n${n.text || ''}\n`);
       }
     }
     if (posts.length) {

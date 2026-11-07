@@ -53,7 +53,12 @@
       const cur = { key: s.key, name: s.name, mode: s.mode, hit: hits.length, weight: Math.round(weight * 10) / 10 };
       if (!best || weight > best.weight || (weight === best.weight && hits.length > best.hit)) best = cur;
     }
-    // 一个都没命中：说明是纯情绪/观点类，走 comment 结构比硬套方法论自然
+    // 一个都没命中：带「怎么/如何」的多半是方法论，硬套评论结构会写出
+    // 「我不太同意…这种说法」这种和话题无关的钩子
+    if (!best && /怎么|如何|怎样|方法|步骤|技巧|教程|攻略|入门/.test(src)) {
+      return { key: 'growth', name: '自我成长', mode: 'method', hit: 0, weight: 0 };
+    }
+    // 其余纯情绪/观点类，走 comment 结构比硬套方法论自然
     return best || { key: 'society', name: '社会话题', mode: 'comment', hit: 0, weight: 0 };
   }
 
@@ -510,7 +515,7 @@
       [(x, m) => `${x}，${m} 句话讲明白`, (x, m) => `${x}｜${m} 句话`],
       [(x, m) => `${x}的 ${m} 个坑，第 2 个最要命`, (x, m) => `${x}的 ${m} 个坑`],
       [(x, m) => `${m} 条${x}的实话，不太好听`, (x, m) => `${m} 条实话，不太好听`],
-      [(x, m) => `${x}怎么做？我说 ${m} 点`, (x, m) => `${x}，${m} 点`],
+      [(x, m) => `${x}，我总结出 ${m} 条`, (x, m) => `${x}｜${m} 条`],
     ];
     let pool = base;
     if (platform === 'xiaohongshu') pool = xhs;
@@ -531,16 +536,13 @@
     return [fill(head, { topic }), fill(desc, { topic })];
   }
 
-  function buildBody({ topic, sector, platform, points, materials, angle }) {
+  function buildBody({ topic, sector, platform, points, materials, angle, duration = 60 }) {
     const cfg = PLATFORM_CFG[platform] || PLATFORM_CFG.gongzhonghao;
     const sec = sector.key;
     const mode = sector.mode || 'method';
     const hookSet = mode === 'comment' ? HOOKS_COMMENT : HOOKS;
-    const hook = fill(pick(hookSet[angle] || hookSet.contrast), {
-      topic,
-      verb: pick(VERBS[sec] || VERBS.growth),
-      scene: pick(SCENES[sec] || SCENES.growth),
-    });
+    const hookVars = { topic, verb: pick(VERBS[sec] || VERBS.growth), scene: pick(SCENES[sec] || SCENES.growth) };
+    const hook = fill(pick(hookSet[angle] || hookSet.contrast), hookVars);
     const save = pick(mode === 'comment' ? SAVES_COMMENT : SAVES);
 
     /* 选要点：评论类走 COMMENT_BANK（现象/原因/代价），方法类走 POINT_BANK（具体动作） */
@@ -620,21 +622,85 @@ ${line}`);
     const body = blocks.join(cfg.sep);
 
     if (platform === 'shipinhao' || platform === 'douyin') {
-      const secs = Math.max(45, Math.round(body.length / 4.2));
-      const lines = chosen.map((p, i) => `${i + 1}、${p[0]}。${p[1]}`).join('\n');
+      /* 口播按 3 字/秒算：15 秒≈45 字，30 秒≈90 字，60 秒≈180 字。
+         钩子给三条候选，正文按目标字数裁，宁可少说一条也不赶语速。 */
+      const HOOK_NAME = { contrast: '反差', suspense: '悬念', emotion: '情绪', story: '故事' };
+      const hookOrder = [...new Set([angle, 'contrast', 'suspense', 'emotion'].filter(Boolean))];
+      const hookCands = [];
+      for (const key of hookOrder) {
+        if (!hookSet[key]) continue;
+        for (let i = 0; i < 2 && hookCands.length < 3; i++) {
+          const text = fill(pick(hookSet[key]), hookVars);
+          if (!hookCands.some((h) => h.text === text)) hookCands.push({ key, text });
+        }
+        if (hookCands.length >= 3) break;
+      }
+      if (!hookCands.length) hookCands.push({ key: angle || 'contrast', text: hook });
+
+      const shorten = (s, cap) => {
+        if (s.length <= cap) return s;
+        const cut = s.slice(0, cap);
+        const m = cut.match(/^(.{6,})[，。！？；,.;!?]/);
+        return (m ? m[1] : cut.replace(/[的了很都就也还把和被让给与，、：；,.:;（(]+$/, '')) + '。';
+      };
+      const hookCap = duration <= 15 ? 12 : duration <= 30 ? 24 : 48;
+      const mainHook = shorten(hookCands[0].text, hookCap);
+      const ctaCap = duration <= 15 ? 8 : duration <= 30 ? 14 : 24;
+      const ctaText = shorten(pick((mode === 'comment' ? CTAS_COMMENT : CTAS)[platform] || CTAS.gongzhonghao), ctaCap);
+      const targetChars = Math.round(duration * 3);
+      // 条数必须等于档位（标题写了 2 条就真给 2 条），所以不做「预算不够就少说一条」。
+      // 15 秒一共才 45 字，每条只剩十来个字，硬塞解释会截成半句话——这种档位只留动作本身
+      const perLine = Math.max(8, Math.floor((targetChars - mainHook.length - ctaText.length - 8) / Math.max(1, chosen.length)) + 2);
+      const shortMode = perLine <= 12;
+
+      const lines = [];
+      const spokenLines = [];
+      for (let i = 0; i < chosen.length; i++) {
+        const [head, desc] = chosen[i];
+        let text = `${head}。${desc}`;
+        if (text.length > perLine) {
+          if (shortMode) {
+            text = head;
+          } else {
+            // 别在「标题句号」处裁——那样永远只剩动作名。给解释留出剩余额度，
+            // 但只在逗号/句号处收尾；收不了就整句不要，别念出「不是"今天要。」这种半句
+            const room = perLine - head.length - 1;
+            let clause = '';
+            if (room >= 6) {
+              const cut = desc.slice(0, room);
+              const hits = [...cut.matchAll(/[，、。；,.;！？!?]/g)].map((m) => m.index).filter((i) => i >= 6);
+              if (hits.length) clause = cut.slice(0, hits[hits.length - 1]);
+              if ((clause.match(/"/g) || []).length % 2) clause = '';
+            }
+            text = clause ? `${head}。${clause}` : head;
+          }
+        }
+        lines.push(`${i + 1}、${text}`);
+        spokenLines.push(text);
+      }
+
+      const spoken = [mainHook, ...spokenLines, ctaText].join('');
+      const secs = Math.max(8, Math.round(spoken.length / 3));
+      const bodyEnd = Math.max(6, Math.round(secs * 0.72));
+
       const parts = [
-        `【口播稿 · 约 ${Math.min(90, secs)} 秒】`,
+        `【口播稿 · 约 ${secs} 秒 · ${spoken.length} 字 · 按 3 字/秒】`,
+        '（15 秒≈45 字，30 秒≈90 字，60 秒≈180 字；宁可少说一条，也别赶）',
         '',
-        '【前3秒 钩子 · 直视镜头】',
-        fill(hook, { topic }),
+        '【钩子 · 三选一 · 读出来选最顺的】',
+        ...hookCands.map((h, i) => `${'ABC'[i] || i + 1}｜${HOOK_NAME[h.key] || ''}｜${h.text}`),
         '',
-        '【正文 · 语速稍快，每讲完一条停半秒】',
-        lines,
+        `【0-3 秒 · 近景，直视镜头】`,
+        mainHook,
         '',
-        '【结尾 · 看向镜头，放慢】',
-        pick((mode === 'comment' ? CTAS_COMMENT : CTAS)[platform] || CTAS.gongzhonghao),
+        `【3-${bodyEnd} 秒 · 中景，每讲完一条停半秒、切一次镜头】`,
+        ...lines,
+        '',
+        `【${bodyEnd}-${secs} 秒 · 近景，放慢半拍】`,
+        ctaText,
         '',
         `【字幕条】${topic}`,
+        '【拍摄提示】竖屏 9:16，窗边自然光，手机和眼睛齐平，麦克风离嘴 20cm；片头别加长 logo。',
       ];
       return parts.join('\n');
     }
@@ -664,14 +730,20 @@ ${line}`);
   }
 
   /* ---------- 主入口 ---------- */
-  function generate({ topic, platform = 'gongzhonghao', points = 5, angle, materials = {} }) {
+  const DURATION_POINTS = { 15: 2, 30: 5, 60: 5 };
+
+  function generate({ topic, platform = 'gongzhonghao', points = 5, duration = 60, angle, materials = {} }) {
+    const isVideo = platform === 'shipinhao' || platform === 'douyin';
     const sector = detectSector(topic);
+    // 评论类的判断句普遍更长，60 秒多给一条才凑得满 3 字/秒
+    const basePts = DURATION_POINTS[duration] || DURATION_POINTS[60];
+    const pts = isVideo ? (sector.mode === 'comment' && duration >= 60 ? 6 : basePts) : points;
     const ang = angle || pick(['contrast', 'contrast', 'suspense', 'story', 'emotion']);
-    const t = titles(topic, points, sector.name, platform, ang);
-    const body = buildBody({ topic, sector, platform, points, materials, angle: ang });
+    const t = titles(topic, pts, sector.name, platform, ang);
+    const body = buildBody({ topic, sector, platform, points: pts, materials, angle: ang, duration });
     return {
       topic, platform, sector: sector.name, sectorKey: sector.key, angle: ang,
-      points, titles: t, body, tags: tags(topic, sector, platform),
+      points: pts, duration, titles: t, body, tags: tags(topic, sector, platform),
       generatedAt: new Date().toISOString(),
     };
   }

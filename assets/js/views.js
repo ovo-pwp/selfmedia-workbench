@@ -9,6 +9,12 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   };
   const dayDiff = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+  const dateAdd = (dateStr, n) => {
+    const d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    const p = (x) => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
   const PLAT = { gongzhonghao: '公众号', xiaohongshu: '小红书', shipinhao: '视频号', douyin: '抖音', other: '其它' };
   const PLAT_EMOJI = { gongzhonghao: '💚', xiaohongshu: '📕', shipinhao: '🎬', douyin: '🎵', other: '📎' };
 
@@ -53,11 +59,31 @@
     const topics = (ctx.liveTopics && ctx.liveTopics.length) ? ctx.liveTopics : (daily.topics || []);
     const isLive = !!(ctx.liveTopics && ctx.liveTopics.length);
     const money = daily.money || [];
-    const [docs, plans, posts] = await Promise.all([Store.all('docs'), Store.all('plans'), Store.all('posts')]);
+    const [docs, plans, posts, poolItems, reminders] = await Promise.all([Store.all('docs'), Store.all('plans'), Store.all('posts'), Store.all('topics'), Store.all('reminders')]);
     const allChecks = plans.reduce((a, p) => a.concat(p.checks || []), []);
     const postWeek = posts.filter((p) => p.date && dayDiff(p.date, todayStr()) < 7).length;
+
+    const today = todayStr();
+    const poolCounts = { todo: 0, doing: 0, done: 0 };
+    poolItems.forEach((t) => { const s = t.status || 'todo'; poolCounts[s] = (poolCounts[s] || 0) + 1; });
+    const dueToday = poolItems.filter((t) => t.scheduledDate === today && t.status !== 'done');
+    const overdue = poolItems.filter((t) => t.scheduledDate && t.scheduledDate < today && t.status !== 'done');
+    const noData = posts.filter((p) => p.date === dateAdd(today, -1) && !(Number(p.views) > 0)).slice(0, 3);
+    const remAll = reminders.filter((r) => r.kind !== 'note' && !r.done && r.date);
+    const remDue = remAll.filter((r) => r.date <= today).sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
+    const remindCount = dueToday.length + overdue.length + noData.length + remDue.length;
+    const poolDue = poolItems.filter((t) => t.scheduledDate && t.status !== 'done').length;
+
+    const remindRow = (icon, text, act, attrs, label) => `
+      <div class="remind">
+        <span class="ri">${icon}</span>
+        <span class="rt">${text}</span>
+        <button class="btn btn-sm" data-act="${act}" ${attrs}>${label}</button>
+      </div>`;
     const d = new Date();
-    const dateCN = `${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]}`;
+    const meta = window.Almanac ? window.Almanac.forDate(today) : null;
+    const almanacBits = meta ? [meta.lunar ? `农历${meta.lunar}` : '', ...meta.tags.map((t) => t.name)].filter(Boolean) : [];
+    const dateCN = [`${d.getMonth() + 1} 月 ${d.getDate()} 日 · 星期${'日一二三四五六'[d.getDay()]}`, ...almanacBits].join(' · ');
     const hour = d.getHours();
     const greet = hour < 6 ? '还没睡呀 🌙' : hour < 11 ? '早上好 ☀️' : hour < 14 ? '中午好 🍚' : hour < 18 ? '下午好 🍵' : '晚上好 🌛';
 
@@ -75,6 +101,7 @@
           <span class="n ${i < 3 ? 'top' : ''}">${i + 1}</span>
           <span class="w">${esc(x.word)}</span>
           <span class="h">${x.hot ? (x.hot / 10000).toFixed(0) + 'w' : ''}</span>
+          <span class="star" data-act="poolAdd" data-title="${esc(x.word)}" data-src="hot" data-heat="${x.hot || 0}" title="收进选题池">☆</span>
         </div>`).join('')}</div>`;
     };
 
@@ -91,6 +118,7 @@
         <div class="acts">
           <button class="btn btn-primary btn-sm" data-act="openTopic" data-id="${esc(t.id)}">✍️ 写这篇</button>
           <button class="btn btn-sm" data-act="copyTopic" data-id="${esc(t.id)}">📋 复制文案</button>
+          <button class="btn btn-sm btn-ghost" data-act="poolAdd" data-title="${esc(t.title)}" data-src="${t.from === 'hot' ? 'hot' : 'daily'}" data-plat="${(t.platforms || [])[0] || ''}">📌 收进池</button>
         </div>
       </div>`).join('');
 
@@ -104,6 +132,34 @@
         <div class="stat"><b>${docs.length}</b><span>存下的稿</span></div>
         <div class="stat"><b>${streak(allChecks)}</b><span>连续打卡</span></div>
         <div class="stat"><b>${postWeek}</b><span>本周发布</span></div>
+      </div>
+    </div>
+
+    ${remindCount ? `
+    <div class="section">
+      <div class="section-head"><h2>⏰ 今天要处理</h2><span class="more" data-act="go" data-view="reminders">提醒与记录</span></div>
+      <div class="card tight">
+        ${remDue.slice(0, 4).map((r) => remindRow('⏰', `${r.date === today ? '今天' : r.date.slice(5).replace('-', '/') + ' 过期'}${r.time ? ' ' + r.time : ''}：${esc(r.title)}`, 'remToggle', `data-id="${r.id}"`, '完成')).join('')}
+        ${dueToday.map((t) => remindRow('📅', `今天排了：${esc(t.title)}`, 'poolWrite', `data-id="${t.id}"`, '去写')).join('')}
+        ${overdue.slice(0, 3).map((t) => remindRow('⌛', `过了 ${t.scheduledDate.slice(5)} 还没发：${esc(t.title)}`, 'poolWrite', `data-id="${t.id}"`, '补上')).join('')}
+        ${noData.map((p) => remindRow('📊', `昨天发的《${esc(p.title)}》还没回填数据`, 'editPost', `data-id="${p.id}"`, '补数据')).join('')}
+      </div>
+    </div>` : ''}
+
+    <div class="section">
+      <div class="section-head"><h2>📌 选题池</h2><span class="more" data-act="go" data-view="pool">全部 ${poolItems.length}</span></div>
+      <div class="card tight">
+        <div class="pool-nums">
+          <span><b>${poolCounts.todo}</b>待写</span>
+          <span><b>${poolCounts.doing}</b>在写</span>
+          <span><b>${poolCounts.done}</b>已发</span>
+          <span><b>${poolDue}</b>已排期</span>
+        </div>
+        <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">
+          <span class="chip" data-act="poolAddManual">＋ 手记一个</span>
+          <span class="chip" data-act="poolCal">📅 看排期日历</span>
+          <span class="chip" data-act="go" data-view="write">✍️ 直接写</span>
+        </div>
       </div>
     </div>
 
@@ -146,6 +202,12 @@
         <div class="card tight" data-act="go" data-view="soul" style="cursor:pointer">
           <div class="card-title">🍃 心灵感悟</div><div class="card-sub" style="margin:0">想到什么写下来</div>
         </div>
+        <div class="card tight" data-act="go" data-view="reminders" style="cursor:pointer">
+          <div class="card-title">⏰ 提醒与记录</div><div class="card-sub" style="margin:0">${remDue.length ? `今天还有 ${remDue.length} 条` : '定个时间，到点提醒'}</div>
+        </div>
+        <div class="card tight" data-act="remAdd" style="cursor:pointer">
+          <div class="card-title">＋ 新建提醒</div><div class="card-sub" style="margin:0">一句话，带日期时间</div>
+        </div>
       </div>
     </div>`;
   }
@@ -160,7 +222,11 @@
     const curPlat = w.plat || 'gongzhonghao';
     const curPts = w.pts || 5;
     const curAngle = w.angle || '';
+    const curDur = w.duration || 60;
+    const isVideo = curPlat === 'shipinhao' || curPlat === 'douyin';
+    const draft = (window.App && App.state.draft) || null;
     return `
+    ${draft ? `<div class="draft-note">💾 已恢复上次草稿${draft.topic ? `：${esc(String(draft.topic).slice(0, 26))}` : ''}<span class="draft-x" data-act="clearDraft">清空重来</span></div>` : ''}
     <div class="card">
       <div class="field">
         <label>想写点什么？</label>
@@ -174,11 +240,17 @@
           </div>
         </div>
       </div>
-      <div class="row" style="gap:14px;margin-bottom:14px">
-        <div>
+      <div class="row" style="gap:14px;margin-bottom:14px;flex-wrap:wrap">
+        <div id="ptsWrap" style="display:${isVideo ? 'none' : ''}">
           <label style="font-size:12.8px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px">正文几条</label>
           <div class="row" style="gap:6px" id="ptsRow">
             ${[3, 4, 5, 6].map((n) => `<span class="chip ${n === curPts ? 'active' : ''}" data-act="pickPts" data-key="${n}">${n} 条</span>`).join('')}
+          </div>
+        </div>
+        <div id="durWrap" style="display:${isVideo ? '' : 'none'}">
+          <label style="font-size:12.8px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px">口播多长 · 按 3 字/秒</label>
+          <div class="row" style="gap:6px" id="durRow">
+            ${[[15, '约 45 字'], [30, '约 90 字'], [60, '约 180 字']].map(([n, tip]) => `<span class="chip ${n === curDur ? 'active' : ''}" data-act="pickDuration" data-key="${n}">${n} 秒 · ${tip}</span>`).join('')}
           </div>
         </div>
         <div>
@@ -196,6 +268,7 @@
         <button class="btn btn-primary" data-act="doGenerate">✨ 开始写</button>
         <button class="btn btn-ghost btn-sm" data-act="go" data-view="settings">🎒 我的素材库 ${matCount ? '(' + matCount + ')' : '(空)'}</button>
       </div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:9px">写的内容会自动存草稿，换平台、刷新页面都不会丢。</div>
     </div>
     <div id="genResult"></div>`;
   }
@@ -338,6 +411,316 @@
     ${doneList.length ? `<div class="section"><div class="section-head"><h2>✅ 已经完成的</h2></div>${doneList.map(card).join('')}</div>` : ''}`;
   }
 
+  /* ================= 选题池 ================= */
+  const POOL_STATUS = {
+    todo: { name: '待写', tag: '', next: 'doing', nextName: '标在写' },
+    doing: { name: '在写', tag: 'y', next: 'done', nextName: '标已发' },
+    done: { name: '已发', tag: 'g', next: 'todo', nextName: '标待写' },
+  };
+  const SCORE_DEFS = [['need', '需求强'], ['comp', '竞争小'], ['extend', '能延展']];
+  const SRC_NAME = { hot: '热榜', daily: '精选', manual: '手记', lowfan: '低粉爆款' };
+
+  function weekMonday(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    const day = (d.getDay() + 6) % 7;
+    return dateAdd(dateStr, -day);
+  }
+
+  async function pool(ctx) {
+    const params = ctx.params || {};
+    const status = params.status || 'all';
+    const mode = params.mode === 'cal' ? 'cal' : 'list';
+    const range = params.range === 'week' ? 'week' : 'month';
+    const weekW = Number(params.w) || 0;
+    const monthW = Number(params.m) || 0;
+    const [all, rems] = await Promise.all([Store.all('topics'), Store.all('reminders')]);
+    const remOn = (ds) => rems.filter((r) => r.kind !== 'note' && !r.done && r.date === ds);
+    const today = todayStr();
+    const counts = { todo: 0, doing: 0, done: 0 };
+    all.forEach((t) => { const s = t.status || 'todo'; counts[s] = (counts[s] || 0) + 1; });
+
+    const monday = dateAdd(weekMonday(today), weekW * 7);
+    const days = Array.from({ length: 7 }, (_, i) => dateAdd(monday, i));
+    const weekCount = all.filter((t) => t.scheduledDate >= monday && t.scheduledDate <= days[6]).length;
+
+    // 整月视图：以周一为行首，前后补齐成整周
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const [ty, tm] = today.split('-').map(Number);
+    const mAnchor = new Date(ty, tm - 1 + monthW, 1);
+    const mFirst = `${mAnchor.getFullYear()}-${pad2(mAnchor.getMonth() + 1)}-01`;
+    const mEndDate = new Date(mAnchor.getFullYear(), mAnchor.getMonth() + 1, 0);
+    const mLast = `${mEndDate.getFullYear()}-${pad2(mEndDate.getMonth() + 1)}-${pad2(mEndDate.getDate())}`;
+    const mGridStart = weekMonday(mFirst);
+    const mGridEnd = dateAdd(weekMonday(mLast), 6);
+    const mDays = [];
+    for (let ds = mGridStart; ds <= mGridEnd; ds = dateAdd(ds, 1)) mDays.push(ds);
+    const monthCount = all.filter((t) => t.scheduledDate >= mFirst && t.scheduledDate <= mLast).length;
+
+    // 排了期的排前面，没排期的按最近改动
+    const sorted = [...all].sort((a, b) => {
+      const sa = a.scheduledDate || '9999-99-99';
+      const sb = b.scheduledDate || '9999-99-99';
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+    });
+    const shown = status === 'all' ? sorted : sorted.filter((t) => (t.status || 'todo') === status);
+    const unplanned = all.filter((t) => !t.scheduledDate && (t.status || 'todo') !== 'done');
+
+    const card = (t) => {
+      const st = POOL_STATUS[t.status] || POOL_STATUS.todo;
+      const sc = t.scores || {};
+      const scoreSum = SCORE_DEFS.filter(([k]) => sc[k]).length;
+      const late = t.scheduledDate && t.scheduledDate < today && (t.status || 'todo') !== 'done';
+      return `<div class="pool-card">
+        <div class="pool-top">
+          <div class="pool-title">${esc(t.title)}</div>
+          <span class="tag ${st.tag}">${st.name}</span>
+        </div>
+        <div class="pool-meta">
+          <span class="tag">${SRC_NAME[t.source] || '手记'}</span>
+          ${(t.platforms || []).map((p) => `<span class="tag p">${PLAT[p] || p}</span>`).join('')}
+          <span class="pool-date">${t.scheduledDate ? `📅 ${t.scheduledDate.slice(5).replace('-', '/')}${late ? ' · 逾期' : ''}` : '未排期'}</span>
+          <span class="pool-date">综合 ${scoreSum}/3</span>
+        </div>
+        <div class="pool-scores">
+          ${SCORE_DEFS.map(([k, label]) => `<span class="score-chip ${sc[k] ? 'on' : ''}" data-act="poolScore" data-id="${t.id}" data-key="${k}">${sc[k] ? '✓' : '＋'} ${label}</span>`).join('')}
+        </div>
+        <div class="pool-acts">
+          <button class="btn btn-primary btn-sm" data-act="poolWrite" data-id="${t.id}">✍️ 去写</button>
+          <button class="btn btn-sm" data-act="poolSchedule" data-id="${t.id}">📅 排期</button>
+          <button class="btn btn-sm btn-ghost" data-act="poolStatus" data-id="${t.id}">${st.nextName}</button>
+          <button class="btn btn-sm btn-ghost" data-act="poolDel" data-id="${t.id}">删除</button>
+        </div>
+        ${t.note ? `<div class="pool-note">📝 ${esc(t.note)}</div>` : ''}
+      </div>`;
+    };
+
+    const listHTML = shown.length
+      ? shown.map(card).join('')
+      : empty('📌', status === 'all' ? '选题池还是空的<br>去首页热榜点 ☆，把好话题收进来' : '这个状态下还没有选题', '<br><button class="btn btn-primary btn-sm" style="margin-top:12px" data-act="poolAddManual">＋ 手记一个</button>');
+
+    const unplannedHTML = unplanned.length ? `
+      <div class="card tight" style="margin-top:14px">
+        <div class="card-title">🕓 还没排期的 ${unplanned.length} 个</div>
+        <div class="card-sub">点一个挑日子，排好当天会自动提醒你</div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          ${unplanned.map((t) => `<span class="chip" data-act="poolSchedule" data-id="${t.id}">${esc(t.title.length > 18 ? t.title.slice(0, 18) + '…' : t.title)}</span>`).join('')}
+        </div>
+      </div>` : '';
+
+    const calLunarRange = (() => {
+      if (!window.Almanac) return '';
+      const a = window.Almanac.forDate(monday).lunar;
+      const b = window.Almanac.forDate(days[6]).lunar;
+      return `${monday.slice(0, 4)} 年 · ${a && b ? `农历${a} → ${b}` : ''}`;
+    })();
+
+    const weekHTML = `
+      <div class="pool-bar" style="justify-content:space-between;align-items:center">
+        <button class="btn btn-sm" data-act="poolWeek" data-w="${weekW - 1}">← 上周</button>
+        <div style="text-align:center;line-height:1.35">
+          <b style="font-size:13px">${monday.slice(5).replace('-', '/')} – ${days[6].slice(5).replace('-', '/')}</b>
+          <div class="cal-range-sub" style="font-size:11px;color:var(--ink-3)">${calLunarRange}</div>
+        </div>
+        <div class="row" style="gap:6px">
+          <button class="btn btn-sm" data-act="poolWeek" data-w="0">本周</button>
+          <button class="btn btn-sm" data-act="poolWeek" data-w="${weekW + 1}">下周 →</button>
+        </div>
+      </div>
+      <div class="cal">
+        ${days.map((ds, i) => {
+          const items = sorted.filter((t) => t.scheduledDate === ds);
+          const rms = remOn(ds);
+          const meta = window.Almanac ? window.Almanac.forDate(ds) : { lunar: '', tags: [] };
+          const solar = window.Almanac ? window.Almanac.solarLabel(ds) : ds.slice(5).replace('-', '/');
+          const hasFest = meta.tags.some((t) => t.type === 'fest');
+          return `<div class="cal-day ${ds === today ? 'today' : ''} ${hasFest ? 'fest' : ''}" data-date="${ds}" title="${esc(window.Almanac ? window.Almanac.label(ds) : ds)}">
+            <div class="cal-h"><b>${['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i]}</b><span>${solar}</span></div>
+            <div class="cal-sub">
+              ${meta.lunar ? `<span class="cal-lunar">${meta.lunar}</span>` : ''}
+              ${meta.tags.map((t) => `<span class="cal-tag ${t.type}">${t.name}</span>`).join('')}
+            </div>
+            ${rms.map((r) => `<div class="cal-item rem" data-act="go" data-view="reminders" title="${esc(r.title)}">⏰ ${r.time ? r.time + ' ' : ''}${esc(r.title)}</div>`).join('')}
+            ${items.map((t) => `<div class="cal-item ${t.status || 'todo'}" data-act="poolSchedule" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</div>`).join('')}
+            <div class="cal-add" data-act="poolDayAdd" data-date="${ds}">＋ 加选题</div>
+          </div>`;
+        }).join('')}
+      </div>
+      ${unplannedHTML}`;
+
+    const monthCells = (ds) => {
+      const outside = ds < mFirst || ds > mLast;
+      const meta = window.Almanac ? window.Almanac.forDate(ds) : { lunar: '', tags: [] };
+      const rms = remOn(ds).map((r) => ({ kind: 'rem', label: `${r.time ? r.time + ' ' : ''}${r.title}`, act: 'data-act="go" data-view="reminders"' }));
+      const items = sorted.filter((t) => t.scheduledDate === ds)
+        .map((t) => ({ kind: t.status || 'todo', label: t.title, act: `data-act="poolSchedule" data-id="${t.id}"` }));
+      const rows = [...rms, ...items];
+      const show = rows.slice(0, 2);
+      const hasFest = meta.tags.some((t) => t.type === 'fest');
+      const tip = `${window.Almanac ? window.Almanac.label(ds) : ds}${rows.length ? '\n' + rows.map((x) => '· ' + x.label).join('\n') : ''}`;
+      return `<div class="cal-day ${outside ? 'out' : ''} ${ds === today ? 'today' : ''} ${hasFest ? 'fest' : ''}" data-date="${ds}" data-act="poolDayAdd" title="${esc(tip)}">
+        <div class="cal-mh"><b>${Number(ds.slice(8))}</b><span>${outside ? `${Number(ds.slice(5, 7))}月` : ''}</span></div>
+        <div class="cal-ml ${meta.tags.length ? 'has-tag' : ''}">${meta.lunar ? `<i>${meta.lunar}</i>` : ''}${meta.tags.map((t) => `<span class="cal-tag ${t.type}">${t.name}</span>`).join('')}</div>
+        <div class="cal-items">
+          ${show.map((x) => `<div class="cal-item ${x.kind}" ${x.act} title="${esc(x.label)}">${esc(x.label)}</div>`).join('')}
+          ${rows.length > show.length ? `<div class="cal-more">+${rows.length - show.length}</div>` : ''}
+        </div>
+        <div class="cal-plus">＋</div>
+      </div>`;
+    };
+
+    const monthSub = (() => {
+      if (!window.Almanac) return `${monthCount} 个排期`;
+      const a = window.Almanac.forDate(mFirst).lunar;
+      const b = window.Almanac.forDate(mLast).lunar;
+      return `${monthCount} 个排期${a && b ? ` · 农历${a} → ${b}` : ''}`;
+    })();
+
+    const monthHTML = `
+      <div class="pool-bar cal-toolbar" style="justify-content:space-between;align-items:center">
+        <button class="btn btn-sm" data-act="poolMonth" data-m="${monthW - 1}">← 上月</button>
+        <div style="text-align:center;line-height:1.35">
+          <b style="font-size:13px">${mAnchor.getFullYear()} 年 ${mAnchor.getMonth() + 1} 月</b>
+          <div class="cal-range-sub" style="font-size:11px;color:var(--ink-3)">${monthSub}</div>
+        </div>
+        <div class="row" style="gap:6px">
+          <button class="btn btn-sm" data-act="poolMonth" data-m="0">本月</button>
+          <button class="btn btn-sm" data-act="poolMonth" data-m="${monthW + 1}">下月 →</button>
+        </div>
+      </div>
+      <div class="cal-week-h">${['一', '二', '三', '四', '五', '六', '日'].map((d) => `<span>周${d}</span>`).join('')}</div>
+      <div class="cal month">
+        ${mDays.map(monthCells).join('')}
+      </div>
+      ${unplannedHTML}`;
+
+    const calHTML = range === 'week' ? weekHTML : monthHTML;
+
+    return `
+    <div class="hero ${mode === 'cal' ? 'hero-compact' : ''}" style="background:linear-gradient(125deg,#F3EAFF,#EAF3FF 55%,#EAFBF1)">
+      <div class="deco">📌</div>
+      <h2>选题池</h2>
+      <p>${all.length ? `一共 ${all.length} 个选题 · 还有 ${counts.todo + counts.doing} 个没发` : '看到好话题先扔进来，别让灵感跑了'}</p>
+      <div class="stat-row">
+        <div class="stat"><b>${counts.todo}</b><span>待写</span></div>
+        <div class="stat"><b>${counts.doing}</b><span>在写</span></div>
+        <div class="stat"><b>${counts.done}</b><span>已发</span></div>
+        <div class="stat"><b>${mode === 'cal' && range === 'month' ? monthCount : weekCount}</b><span>${mode === 'cal' && range === 'month' ? '本月排期' : '本周排期'}</span></div>
+      </div>
+    </div>
+
+    <div class="pool-bar">
+      <button class="btn btn-primary btn-sm" data-act="poolAddManual">＋ 加选题</button>
+      <span class="chip ${mode === 'list' ? 'active' : ''}" data-act="poolMode" data-key="list">列表</span>
+      <span class="chip ${mode === 'cal' ? 'active' : ''}" data-act="poolMode" data-key="cal">日历</span>
+      ${mode === 'cal' ? [['month', '月视图'], ['week', '周视图']]
+        .map(([k, n]) => `<span class="chip chip-seg ${range === k ? 'active' : ''}" data-act="poolRange" data-key="${k}">${n}</span>`).join('') : ''}
+      ${mode === 'list' ? [['all', '全部'], ['todo', '待写'], ['doing', '在写'], ['done', '已发']]
+        .map(([k, n]) => `<span class="chip ${status === k ? 'active' : ''}" data-act="poolFilter" data-key="${k}">${n}${k === 'all' ? '' : ' ' + counts[k]}</span>`).join('') : ''}
+    </div>
+
+    ${mode === 'cal' ? calHTML : listHTML}
+    <div style="font-size:11.5px;color:var(--ink-3);margin-top:12px;line-height:1.7">
+      三个维度都点满的，优先写。排了期的选题当天会出现在首页「今天要处理」里。
+    </div>`;
+  }
+
+  /* ================= 提醒与记录 ================= */
+  const REPEAT_NAME = { none: '一次', daily: '每天', weekly: '每周', monthly: '每月' };
+  const remDateLabel = (ds) => {
+    if (!window.Almanac) return ds;
+    const meta = window.Almanac.forDate(ds);
+    return `${window.Almanac.solarLabel(ds)} ${window.Almanac.weekdayLabel(ds)}${meta.lunar ? ' · 农历' + meta.lunar : ''}`;
+  };
+
+  async function reminders(ctx) {
+    const params = ctx.params || {};
+    const tab = params.tab === 'note' ? 'note' : 'rem';
+    const all = (await Store.all('reminders')).filter((r) => r.kind === 'note' || r.title);
+    const list = all.filter((r) => r.kind !== 'note');
+    const notes = all.filter((r) => r.kind === 'note').sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const today = todayStr();
+    const pending = list.filter((r) => !r.done && r.date).sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
+    const todayN = pending.filter((r) => r.date === today).length;
+    const weekN = pending.filter((r) => r.date >= today && r.date <= dateAdd(today, 7)).length;
+    const todayNote = notes.find((n) => n.date === today);
+
+    const row = (r) => `<div class="rem-item ${r.done ? 'done' : ''}">
+      <button class="rem-check" data-act="remToggle" data-id="${r.id}" aria-label="完成">${r.done ? '✓' : ''}</button>
+      <div class="rem-main" data-act="remEdit" data-id="${r.id}">
+        <div class="rem-title">${esc(r.title)}</div>
+        <div class="rem-meta">${remDateLabel(r.date)}${r.time ? ' · ' + r.time : ''}${r.repeat && r.repeat !== 'none' ? ' · ' + (REPEAT_NAME[r.repeat] || r.repeat) : ''}</div>
+        ${r.note ? `<div class="rem-note">${esc(r.note)}</div>` : ''}
+      </div>
+      <button class="rem-del" data-act="remDel" data-id="${r.id}" aria-label="删除">✕</button>
+    </div>`;
+
+    const groups = [
+      ['⌛ 逾期', pending.filter((r) => r.date < today)],
+      ['⏰ 今天', pending.filter((r) => r.date === today)],
+      ['明天', pending.filter((r) => r.date === dateAdd(today, 1))],
+      ['本周内', pending.filter((r) => r.date > dateAdd(today, 1) && r.date <= dateAdd(today, 7))],
+      ['以后', pending.filter((r) => r.date > dateAdd(today, 7))],
+      ['✅ 已完成', list.filter((r) => r.done)],
+    ].filter(([, arr]) => arr.length);
+
+    const notifySupported = typeof Notification !== 'undefined';
+    const notifyPerm = notifySupported ? Notification.permission : 'unsupported';
+
+    const remHTML = `
+      <div class="pool-bar">
+        <button class="btn btn-primary btn-sm" data-act="remAdd">＋ 新建提醒</button>
+        <span class="chip" data-act="icsExport">⤓ 导出到手机日历</span>
+        ${notifySupported ? `<span class="chip ${notifyPerm === 'granted' ? 'active' : ''}" data-act="notifyEnable">${notifyPerm === 'granted' ? '🔔 通知已开' : '🔔 开启通知'}</span>` : ''}
+      </div>
+      ${groups.length ? groups.map(([name, arr]) => `
+        <div class="section-head" style="margin-top:16px"><h2 style="font-size:13.5px;color:var(--ink-3)">${name} · ${arr.length}</h2></div>
+        <div class="card tight">${arr.map(row).join('')}</div>`).join('')
+      : empty('⏰', '还没有提醒<br>新建一条，到点手机和电脑都会提醒你')}
+      <div class="tip-box">
+        <b>怎么才能关掉网页也提醒？</b><br>
+        网页通知只在页面开着时有效。点「导出到手机日历」生成 .ics，用系统日历打开导入，
+        到点由系统弹提醒（关掉浏览器也有效）。电脑上双击导入 Outlook / 苹果日历同样可用。
+      </div>`;
+
+    const noteHTML = `
+      <div class="card">
+        <div class="card-title">📝 今天记一笔</div>
+        <div class="card-sub">${remDateLabel(today)}</div>
+        <textarea class="textarea" id="noteToday" rows="5" placeholder="今天做了什么、数据怎么样、明天想改什么…（自动保存）">${esc(todayNote ? todayNote.text : '')}</textarea>
+        <div class="rem-saved" id="noteSaved">${todayNote ? '已保存' : ''}</div>
+      </div>
+      ${notes.filter((n) => n.date !== today && (n.text || '').trim()).length ? `
+      <div class="section-head" style="margin-top:18px"><h2>以前的记录</h2></div>
+      <div class="card tight">
+        ${notes.filter((n) => n.date !== today && (n.text || '').trim()).map((n) => `
+          <div class="note-item">
+            <div class="note-date">${remDateLabel(n.date)}</div>
+            <div class="note-text">${esc(n.text)}</div>
+          </div>`).join('')}
+      </div>` : ''}`;
+
+    return `
+    <div class="hero" style="background:linear-gradient(125deg,#EAF3FF,#F3EAFF 60%,#FFF9E3)">
+      <div class="deco">⏰</div>
+      <h2>提醒与记录</h2>
+      <p>${pending.length ? `共 ${pending.length} 条待办${todayN ? `，今天 ${todayN} 条` : ''}` : '暂时没有待办，记一笔今天吧'}</p>
+      <div class="stat-row">
+        <div class="stat"><b>${todayN}</b><span>今天</span></div>
+        <div class="stat"><b>${weekN}</b><span>本周</span></div>
+        <div class="stat"><b>${notes.length}</b><span>记录</span></div>
+        <div class="stat"><b>${list.filter((r) => r.done).length}</b><span>已完成</span></div>
+      </div>
+    </div>
+
+    <div class="pool-bar">
+      <span class="chip ${tab === 'rem' ? 'active' : ''}" data-act="remTab" data-key="rem">提醒</span>
+      <span class="chip ${tab === 'note' ? 'active' : ''}" data-act="remTab" data-key="note">记录</span>
+    </div>
+
+    ${tab === 'rem' ? remHTML : noteHTML}`;
+  }
+
   /* ================= 发布记录 ================= */
   /* 台账：内容类型 / 发布时段（固定标签，才好做聚合） */
   const POST_TYPES = ['干货教程', '经验分享', '日常记录', '测评', '热点蹭流'];
@@ -434,6 +817,11 @@
     const recRow = (p) => {
       const r = interRate(p);
       const isHot = (Number(p.views) || 0) > hotLine;
+      const isVideo = p.platform === 'douyin' || p.platform === 'shipinhao';
+      const videoExtra = [];
+      if (p.finish) videoExtra.push(`完播 ${p.finish}%`);
+      if (p.avgPlay) videoExtra.push(`均播 ${p.avgPlay}s`);
+      if (p.fans) videoExtra.push(`涨粉 ${p.fans}`);
       return `
       <div class="rec">
         <div class="rec-top">
@@ -452,6 +840,8 @@
           <span>💬 ${Number(p.comments) || 0}</span>
           <span class="rec-rate ${r == null ? '' : r >= 0.03 ? 'good' : ''}">互动率 ${pct(r)}</span>
         </div>
+        ${isVideo && videoExtra.length ? `<div class="rec-nums rec-extra">${videoExtra.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
+        ${p.review ? `<div class="rec-note">🔍 复盘：${esc(p.review)}</div>` : ''}
         ${p.notes ? `<div class="rec-note">📝 ${esc(p.notes)}</div>` : ''}
       </div>`;
     };
@@ -748,6 +1138,9 @@
   /* ================= 设置 ================= */
   async function settings(ctx) {
     const mats = (await Store.kvGet('materials', {})) || {};
+    const petSaved = await Store.kvGet('pet.on', null);
+    const petOn = petSaved === null ? true : !!petSaved;
+    const isPhone = !window.matchMedia || window.matchMedia('(max-width: 820px)').matches;
     const line = (arr) => (arr || []).join('\n');
     return `
     <div class="card">
@@ -802,6 +1195,15 @@
       <div class="card-sub" style="margin-top:8px">APK 里的数据单独存一份，和浏览器不互通；只想要个桌面图标的话，用上面两种方式更省事。</div>
     </div>
 
+    ${isPhone ? `<div class="card">
+      <div class="card-title">🐾 桌面萌宠</div>
+      <div class="card-sub">手机端右下角有只小猫，点它会说句话，顺便告诉你今天还有多少事没做完。</div>
+      <div class="row" style="margin-top:10px">
+        <span class="tag ${petOn ? 'g' : 'y'}">${petOn ? '已开启' : '已关闭'}</span>
+        <button class="btn btn-sm" data-act="petToggle">${petOn ? '让它去睡觉' : '叫它出来'}</button>
+      </div>
+    </div>` : ''}
+
     <div class="card" style="background:var(--pink-100);border-color:var(--pink-200)">
       <div class="card-title">🧹 危险区</div>
       <div class="row" style="margin-top:8px">
@@ -810,6 +1212,6 @@
     </div>`;
   }
 
-  window.Views = { home, write, money, praise, soul, plan, posts, books, skills, docs, settings, tarot: tarotView };
-  window.ViewUtil = { esc, todayStr, streak, PLAT, PLAT_EMOJI, empty, last30Dots, POST_TYPES, POST_SLOTS };
+  window.Views = { home, pool, reminders, write, money, praise, soul, plan, posts, books, skills, docs, settings, tarot: tarotView };
+  window.ViewUtil = { esc, todayStr, dateAdd, weekMonday, streak, PLAT, PLAT_EMOJI, empty, last30Dots, POST_TYPES, POST_SLOTS };
 })();

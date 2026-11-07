@@ -11,7 +11,8 @@
       daily: null,
       hot: null,
       liveTopics: null,     // 从热榜现做的选题
-      write: { plat: 'gongzhonghao', pts: 5, angle: '', topic: '', result: null, preset: null },
+      draft: null,          // 上次没写完的草稿
+      write: { plat: 'gongzhonghao', pts: 5, angle: '', duration: 60, topic: '', result: null, preset: null },
     },
   };
 
@@ -71,6 +72,8 @@
         input = `<input class="input" type="number" data-f="${f.name}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}">`;
       } else if (f.type === 'date') {
         input = `<input class="input" type="date" data-f="${f.name}" value="${esc(v || todayStr())}">`;
+      } else if (f.type === 'time') {
+        input = `<input class="input" type="time" data-f="${f.name}" value="${esc(v)}">`;
       } else {
         input = `<input class="input" data-f="${f.name}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}">`;
       }
@@ -107,6 +110,20 @@
       foot: `<button class="btn btn-ghost" data-act="closeModal">取消</button><button class="btn btn-primary" id="okBtn">确定</button>`,
     });
     document.getElementById('okBtn').onclick = () => { closeModal(); onOk(); };
+  }
+
+  /* ---------- 草稿自动保存 ---------- */
+  let draftTimer = null;
+  function saveDraft() {
+    const w = App.state.write;
+    return Store.kvSet('draft', {
+      topic: w.topic, plat: w.plat, pts: w.pts, angle: w.angle, duration: w.duration,
+      result: w.result, preset: w.preset, savedAt: new Date().toISOString(),
+    });
+  }
+  function autosave() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => { saveDraft().catch(() => {}); }, 450);
   }
 
   /* ---------- 数据加载 ---------- */
@@ -168,7 +185,7 @@
 
   /* ---------- 路由 ---------- */
   const TITLES = {
-    home: '首页选题', write: '写文案', money: '搞钱项目', praise: '赞美日记',
+    home: '首页选题', pool: '选题池', reminders: '提醒与记录', write: '写文案', money: '搞钱项目', praise: '赞美日记',
     soul: '心灵感悟', tarot: '问牌', plan: '成长计划', posts: '发布台账', books: '读书',
     skills: '技能学习', docs: '我的文档', settings: '设置',
   };
@@ -187,6 +204,7 @@
     if (!noPush) history.replaceState({ view, params }, '', '#' + view);
 
     const v = document.getElementById('view');
+    v.classList.toggle('view-wide', view === 'pool' && params.mode === 'cal');
     v.innerHTML = `<div class="skeleton" style="height:130px;margin-bottom:14px"></div><div class="skeleton" style="height:90px;margin-bottom:14px"></div><div class="skeleton" style="height:90px"></div>`;
     try {
       // 保险：HTML 更新了但 JS 还是旧的（缓存没对齐）时，自动重新载入一次，
@@ -208,14 +226,29 @@
       });
       v.innerHTML = html;
       window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+      // 手机上一屏只放得下三列，日历默认会停在周一；直接滚到今天，免得以为没排期
+      if (view === 'pool' && App.state.params.mode === 'cal') {
+        const cal = v.querySelector('.cal');
+        const todayEl = v.querySelector('.cal-day.today');
+        if (cal && todayEl && cal.scrollWidth > cal.clientWidth) {
+          cal.scrollLeft += todayEl.getBoundingClientRect().left - cal.getBoundingClientRect().left - 8;
+        }
+      }
       if (view === 'write') {
-        document.getElementById('topicInput').value = App.state.write.topic || '';
+        const ti = document.getElementById('topicInput');
+        ti.value = App.state.write.topic || '';
+        ti.addEventListener('input', () => {
+          App.state.write.topic = ti.value;
+          autosave();
+        });
         if (App.state.write.result) renderResult();
       }
+      if (view === 'reminders' && App.state.params.tab === 'note') attachNoteAutosave();
     } catch (e) {
       console.error(e);
       v.innerHTML = `<div class="empty">页面加载出错：${esc(e.message)}</div>`;
     }
+    if (window.Pet) window.Pet.setPage(view, params);
   }
 
   /* ---------- 文案渲染 ---------- */
@@ -267,6 +300,7 @@
     const tags = c.tags || [];
     const full = `【标题备选】\n${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n【正文】\n${body}\n\n${tags.join(' ')}`;
     const fromPreset = !!(w.preset && w.preset.copies && w.preset.copies[w.plat]);
+    const isVideoCopy = c.platform === 'douyin' || c.platform === 'shipinhao';
 
     // 合规检查：正文高亮 + 标题/正文汇总提示
     const bodyHits = Sensitive.check(body);
@@ -285,7 +319,7 @@
         <div style="font-size:12.5px;color:var(--ink-3);margin-bottom:7px">标题备选（点一条直接复制）· 共 ${titles.length} 条</div>
         ${titles.map((t, i) => `<div class="title-opt" data-act="copyOne" data-text="${esc(t)}"><span class="num">${i + 1}</span><span class="txt">${esc(t)}</span><span style="font-size:11px;color:var(--ink-3)">复制</span></div>`).join('')}
 
-        <div style="font-size:12.5px;color:var(--ink-3);margin:15px 0 7px">正文${c.points ? ` · 说 ${c.points} 条就写 ${c.points} 条` : ''}</div>
+        <div style="font-size:12.5px;color:var(--ink-3);margin:15px 0 7px">${isVideoCopy ? `口播稿${c.duration ? ' · ' + c.duration + ' 秒档' : ''}` : `正文${c.points ? ` · 说 ${c.points} 条就写 ${c.points} 条` : ''}`}</div>
         <div class="copy-block">${bodyHTML}</div>
 
         <div style="margin-top:12px">${tags.map((t) => `<span class="tag p">${esc(t)}</span>`).join('')}</div>
@@ -318,6 +352,131 @@
   }
 
   /* ---------- 动作 ---------- */
+  /* ---------- 提醒 ---------- */
+  function nextRepeat(dateStr, repeat) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const base = new Date(y, m - 1, d);
+    if (repeat === 'daily') base.setDate(base.getDate() + 1);
+    else if (repeat === 'weekly') base.setDate(base.getDate() + 7);
+    else if (repeat === 'monthly') {
+      const day = base.getDate();
+      base.setDate(1);
+      base.setMonth(base.getMonth() + 1);
+      // 1 月 31 日的「每月」不能滚到 3 月，夹到当月最后一天
+      base.setDate(Math.min(day, new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate()));
+    }
+    const p = (n) => String(n).padStart(2, '0');
+    return `${base.getFullYear()}-${p(base.getMonth() + 1)}-${p(base.getDate())}`;
+  }
+
+  function openReminderForm(r) {
+    form({
+      title: r ? '改提醒' : '新建提醒',
+      fields: [
+        { name: 'title', label: '提醒什么', placeholder: '例如：发抖音 / 回填昨天数据 / 给客户回消息', required: true },
+        { name: 'date', label: '哪天', type: 'date', value: (r && r.date) || todayStr() },
+        { name: 'time', label: '几点（留空 = 全天，打开应用时提醒）', type: 'time', value: (r && r.time) || '20:00' },
+        {
+          name: 'repeat', label: '重复', type: 'select', value: (r && r.repeat) || 'none',
+          options: [{ value: 'none', label: '只这一次' }, { value: 'daily', label: '每天' }, { value: 'weekly', label: '每周' }, { value: 'monthly', label: '每月' }],
+        },
+        { name: 'note', label: '备注（可选）', type: 'textarea', rows: 3, placeholder: '要带上的信息，比如平台、链接、要点', value: (r && r.note) || '' },
+      ],
+      submitText: r ? '保存' : '加上',
+      onSubmit: async (v) => {
+        const obj = r ? { ...r } : { id: Store.uid(), kind: 'remind', done: false, createdAt: new Date().toISOString() };
+        Object.assign(obj, {
+          title: v.title.trim(), date: v.date, time: v.time || '',
+          repeat: v.repeat || 'none', note: (v.note || '').trim(), updatedAt: new Date().toISOString(),
+        });
+        await Store.put('reminders', obj);
+        toast(r ? '改好了' : '加上了 ⏰');
+        go('reminders', { tab: 'rem' });
+      },
+    });
+  }
+
+  let remTimer = null;
+  async function checkReminders() {
+    // 拿不到通知权限（比如局域网 http）也要在页面里提醒，不能静默
+    const canNotify = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    const now = new Date();
+    const today = todayStr();
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const list = await Store.all('reminders');
+    const fired = (await Store.kvGet('rem.fired', {})) || {};
+    let dirty = false;
+    for (const r of list) {
+      if (r.kind === 'note' || r.done || !r.date || !r.time || r.date !== today) continue;
+      const [hh, mm] = r.time.split(':').map(Number);
+      const at = hh * 60 + mm;
+      // 只补 5 分钟内到点的，免得晚上打开应用被一整天的提醒连着弹
+      if (mins < at || mins > at + 5) continue;
+      const key = `${r.id}@${r.date}`;
+      if (fired[key]) continue;
+      if (canNotify) {
+        try {
+          new Notification('⏰ ' + r.title, { body: `${r.time}${r.note ? ' · ' + r.note : ''}`, tag: key, icon: 'icons/icon-192.png' });
+        } catch (e) { toast(`⏰ ${r.time} ${r.title}`); }
+      } else {
+        toast(`⏰ ${r.time} ${r.title}`);
+      }
+      fired[key] = now.getTime();
+      dirty = true;
+    }
+    if (dirty) {
+      const keys = Object.keys(fired);
+      keys.slice(0, Math.max(0, keys.length - 200)).forEach((k) => delete fired[k]);
+      await Store.kvSet('rem.fired', fired);
+    }
+  }
+
+  function startReminderTicker() {
+    if (remTimer) return;
+    checkReminders().catch(() => {});
+    remTimer = setInterval(() => checkReminders().catch(() => {}), 30000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkReminders().catch(() => {});
+    });
+  }
+
+  async function bootReminderNotice() {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const today = todayStr();
+    if ((await Store.kvGet('rem.notice', '')) === today) return;
+    const list = (await Store.all('reminders')).filter((r) => r.kind !== 'note' && !r.done && r.date && r.date <= today);
+    if (!list.length) return;
+    try {
+      new Notification(`今天有 ${list.length} 条提醒`, {
+        body: list.slice(0, 3).map((r) => (r.time ? r.time + ' ' : '') + r.title).join(' / '),
+        tag: 'rem-daily-' + today,
+      });
+    } catch (e) { /* 忽略 */ }
+    await Store.kvSet('rem.notice', today);
+  }
+
+  /* ---------- 每日记录自动保存 ---------- */
+  function attachNoteAutosave() {
+    const ta = document.getElementById('noteToday');
+    const flag = document.getElementById('noteSaved');
+    if (!ta) return;
+    let timer = null;
+    ta.addEventListener('input', () => {
+      if (flag) flag.textContent = '正在保存…';
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const date = todayStr();
+        const rec = (await Store.all('reminders')).find((r) => r.kind === 'note' && r.date === date);
+        const obj = rec || { id: 'note-' + date, kind: 'note', date };
+        obj.text = ta.value;
+        obj.updatedAt = new Date().toISOString();
+        await Store.put('reminders', obj);
+        const now = new Date();
+        if (flag) flag.textContent = `已自动保存 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      }, 500);
+    });
+  }
+
   const Actions = {
     closeModal() { closeModal(); },
 
@@ -346,6 +505,7 @@
               <span class="n ${i < 3 ? 'top' : ''}">${i + 1}</span>
               <span class="w">${esc(x.word)}</span>
               <span class="h">${x.hot ? (x.hot / 10000).toFixed(0) + 'w' : ''}</span>
+              <span class="star" data-act="poolAdd" data-title="${esc(x.word)}" data-src="hot" data-heat="${x.hot || 0}" title="收进选题池">☆</span>
             </div>`).join('')}</div>`
         : `<div class="empty" style="padding:22px">这个平台暂时没抓到，换一个看看</div>`;
     },
@@ -376,9 +536,10 @@
         // 热榜现做的选题：立刻用引擎写一版
         const mats = await Store.kvGet('materials', {});
         App.state.write.preset = null;
-        App.state.write.result = CopyGen.generate({ topic: t.title, platform: App.state.write.plat, points: App.state.write.pts, materials: mats });
+        App.state.write.result = CopyGen.generate({ topic: t.title, platform: App.state.write.plat, points: App.state.write.pts, duration: App.state.write.duration, materials: mats });
       }
       go('write', { topic: t.title });
+      autosave();
     },
 
     async copyTopic(el) {
@@ -392,39 +553,281 @@
         await copyText(`${c.titles.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n${c.body}\n\n${(c.tags || []).join(' ')}`);
         toast('已复制 ' + (PLAT[p] || '') + ' 文案');
       } else {
-        const r = CopyGen.generate({ topic: t.title, platform: 'gongzhonghao', points: 5, materials: await Store.kvGet('materials', {}) });
+        const r = CopyGen.generate({ topic: t.title, platform: 'gongzhonghao', points: 5, duration: App.state.write.duration, materials: await Store.kvGet('materials', {}) });
         await copyText(`${r.titles.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n${r.body}\n\n${r.tags.join(' ')}`);
         toast('已复制文案');
       }
+    },
+
+    /* --- 选题池 --- */
+    async poolAdd(el) {
+      const title = (el.dataset.title || '').trim();
+      if (!title) return;
+      const all = await Store.all('topics');
+      if (all.some((t) => t.title === title)) { toast('选题池里已经有了'); return; }
+      const now = new Date().toISOString();
+      await Store.put('topics', {
+        id: Store.uid(), title, source: el.dataset.src || 'manual',
+        platforms: el.dataset.plat ? [el.dataset.plat] : [],
+        heat: Number(el.dataset.heat) || 0,
+        status: 'todo', scores: { need: false, comp: false, extend: false },
+        scheduledDate: null, note: '', createdAt: now, updatedAt: now,
+      });
+      toast('已收进选题池 📌');
+    },
+
+    poolAddManual() {
+      form({
+        title: '📌 手记一个选题',
+        fields: [
+          { name: 'title', label: '选题', required: true, placeholder: '一句话写清要说什么' },
+          { name: 'platform', label: '打算发哪', type: 'select', value: 'gongzhonghao', options: Object.entries(PLAT).map(([v, l]) => ({ value: v, label: l })) },
+          { name: 'note', label: '备注（角度 / 素材 / 想让人记住什么）', type: 'textarea', rows: 2 },
+        ],
+        onSubmit: async (v) => {
+          const now = new Date().toISOString();
+          await Store.put('topics', {
+            id: Store.uid(), title: v.title.trim(), source: 'manual',
+            platforms: v.platform ? [v.platform] : [], heat: 0,
+            status: 'todo', scores: { need: false, comp: false, extend: false },
+            scheduledDate: null, note: v.note || '',
+            createdAt: now, updatedAt: now,
+          });
+          toast('记下了 📌');
+          if (App.state.view === 'pool') go('pool', App.state.params, true);
+        },
+      });
+    },
+
+    poolCal() { go('pool', { mode: 'cal', range: 'month', m: 0 }); },
+
+    poolFilter(el) {
+      go('pool', { ...App.state.params, status: el.dataset.key });
+    },
+
+    poolMode(el) {
+      go('pool', { ...App.state.params, mode: el.dataset.key }, true);
+    },
+
+    poolRange(el) {
+      go('pool', { ...App.state.params, mode: 'cal', range: el.dataset.key }, true);
+    },
+
+    poolMonth(el) {
+      go('pool', { ...App.state.params, mode: 'cal', range: 'month', m: Number(el.dataset.m) || 0 }, true);
+    },
+
+    poolWeek(el) {
+      go('pool', { ...App.state.params, mode: 'cal', range: 'week', w: Number(el.dataset.w) || 0 }, true);
+    },
+
+    async poolStatus(el) {
+      const t = await Store.get('topics', el.dataset.id);
+      if (!t) return;
+      const cur = t.status || 'todo';
+      t.status = cur === 'todo' ? 'doing' : cur === 'doing' ? 'done' : 'todo';
+      t.updatedAt = new Date().toISOString();
+      await Store.put('topics', t);
+      go(App.state.view, App.state.params, true);
+      toast('已标为「' + (t.status === 'todo' ? '待写' : t.status === 'doing' ? '在写' : '已发') + '」');
+    },
+
+    async poolScore(el) {
+      const t = await Store.get('topics', el.dataset.id);
+      if (!t) return;
+      t.scores = t.scores || {};
+      t.scores[el.dataset.key] = !t.scores[el.dataset.key];
+      t.updatedAt = new Date().toISOString();
+      await Store.put('topics', t);
+      go(App.state.view, App.state.params, true);
+    },
+
+    poolSchedule(el) {
+      Store.get('topics', el.dataset.id).then((t) => {
+        if (!t) return;
+        form({
+          title: '📅 安排「' + t.title.slice(0, 16) + '」',
+          values: t,
+          fields: [
+            { name: 'scheduledDate', label: '哪天发', type: 'date', value: t.scheduledDate || todayStr() },
+            { name: 'note', label: '备注', type: 'textarea', rows: 2 },
+          ],
+          onSubmit: async (v) => {
+            t.scheduledDate = v.scheduledDate || null;
+            t.note = v.note || '';
+            t.updatedAt = new Date().toISOString();
+            await Store.put('topics', t);
+            go(App.state.view, App.state.params, true);
+            toast('排好了 📅');
+          },
+        });
+      });
+    },
+
+    poolDayAdd(el) {
+      const ds = el.dataset.date;
+      form({
+        title: '📅 ' + ds.slice(5).replace('-', '/') + ' 加个选题',
+        fields: [
+          { name: 'title', label: '选题', required: true },
+          { name: 'note', label: '备注', type: 'textarea', rows: 2 },
+        ],
+        onSubmit: async (v) => {
+          const now = new Date().toISOString();
+          await Store.put('topics', {
+            id: Store.uid(), title: v.title.trim(), source: 'manual', platforms: [], heat: 0,
+            status: 'todo', scores: { need: false, comp: false, extend: false },
+            scheduledDate: ds, note: v.note || '', createdAt: now, updatedAt: now,
+          });
+          go(App.state.view, App.state.params, true);
+          toast('已排到 ' + ds.slice(5).replace('-', '/'));
+        },
+      });
+    },
+
+    async poolWrite(el) {
+      const t = await Store.get('topics', el.dataset.id);
+      if (!t) return;
+      const w = App.state.write;
+      w.topic = t.title;
+      w.preset = null;
+      w.result = null;
+      if (t.platforms && t.platforms[0] && PLAT[t.platforms[0]]) w.plat = t.platforms[0];
+      t.status = 'doing';
+      t.updatedAt = new Date().toISOString();
+      await Store.put('topics', t);
+      await go('write', { topic: t.title });
+      const ti = document.getElementById('topicInput');
+      if (ti) ti.value = t.title;
+      autosave();
+      toast('开始写「' + t.title.slice(0, 14) + '」');
+    },
+
+    poolDel(el) {
+      confirmBox('把这个选题从池子里删掉？', async () => {
+        await Store.del('topics', el.dataset.id);
+        go(App.state.view, App.state.params, true);
+        toast('已删除');
+      });
+    },
+
+    /* ---------- 提醒与记录 ---------- */
+    remTab(el) { go('reminders', { tab: el.dataset.key }); },
+
+    remAdd() { openReminderForm(null); },
+
+    async remEdit(el) {
+      const r = await Store.get('reminders', el.dataset.id);
+      if (r) openReminderForm(r);
+    },
+
+    async remToggle(el) {
+      const r = await Store.get('reminders', el.dataset.id);
+      if (!r) return;
+      if (r.repeat && r.repeat !== 'none' && !r.done) {
+        r.date = nextRepeat(r.date, r.repeat);
+        await Store.put('reminders', r);
+        toast('完成这条，下次 ' + r.date.slice(5).replace('-', '/'));
+      } else {
+        r.done = !r.done;
+        await Store.put('reminders', r);
+        toast(r.done ? '已完成 ✅' : '已恢复');
+      }
+      go(App.state.view, App.state.params, true);
+    },
+
+    remDel(el) {
+      confirmBox('删掉这条提醒？', async () => {
+        await Store.del('reminders', el.dataset.id);
+        go(App.state.view, App.state.params, true);
+        toast('已删除');
+      });
+    },
+
+    notifyEnable() {
+      if (typeof Notification === 'undefined') { toast('这个浏览器不支持通知，用导出的 .ics 更稳'); return; }
+      if (Notification.permission === 'granted') { toast('通知已经开着，页面开着时到点会弹'); return; }
+      Notification.requestPermission().then((p) => {
+        toast(p === 'granted' ? '通知已开启' : '没拿到权限，可以改用「导出到手机日历」');
+        if (App.state.view === 'reminders') go('reminders', App.state.params, true);
+      }).catch(() => toast('开启失败，可以改用「导出到手机日历」'));
+    },
+
+    async icsExport() {
+      const [rems, topics] = await Promise.all([Store.all('reminders'), Store.all('topics')]);
+      const events = [];
+      rems.filter((r) => r.kind !== 'note' && !r.done && r.date).forEach((r) => {
+        events.push({
+          uid: `rem-${r.id}@workbench`, title: r.title, date: r.date, time: r.time || '',
+          desc: r.note || '来自「我的小工作台」', alarm: r.time ? '-PT30M' : '-PT12H',
+        });
+      });
+      topics.filter((t) => t.scheduledDate && t.status !== 'done').forEach((t) => {
+        events.push({
+          uid: `topic-${t.id}@workbench`, title: `发：${t.title}`, date: t.scheduledDate,
+          time: '', desc: '选题池排期', alarm: '-PT4H',
+        });
+      });
+      if (window.Almanac) {
+        window.Almanac.festsBetween(todayStr(), 60).forEach((f) => {
+          events.push({
+            uid: `fest-${f.date}-${f.name}@workbench`, title: `${f.name} · 提前想选题`,
+            date: f.date, time: '', desc: '节日借势，提前 3 天提醒', alarm: '-P3D',
+          });
+        });
+      }
+      if (!events.length) { toast('还没有可导出的提醒或排期'); return; }
+      Backup.download(`工作台日历-${Backup.stamp()}.ics`, window.Ics.build(events), 'text/calendar;charset=utf-8');
+      toast(`已导出 ${events.length} 个日程，用系统日历打开即可`);
+    },
+
+    clearDraft() {
+      App.state.draft = null;
+      Object.assign(App.state.write, { pts: 5, angle: '', duration: 60, topic: '', result: null, preset: null });
+      Store.del('kv', 'draft').catch(() => {});
+      go('write');
+      toast('草稿已清空');
     },
 
     pickPlat(el) {
       document.querySelectorAll('#platRow .chip').forEach((c) => c.classList.remove('active'));
       el.classList.add('active');
       const w = App.state.write;
+      const had = !!(w.result || w.preset);
       w.plat = el.dataset.key;
-      // 今日精选只备了部分平台，切到没备的就现场生成一版
-      if (w.preset && !(w.preset.copies && w.preset.copies[w.plat])) {
-        w.preset = null;
-        Store.kvGet('materials', {}).then((m) => {
-          w.result = CopyGen.generate({ topic: w.topic, platform: w.plat, points: w.pts, materials: m });
-          renderResult();
-        });
-        return;
-      }
-      if (w.result) renderResult();
+      const isVideo = w.plat === 'shipinhao' || w.plat === 'douyin';
+      const ptsWrap = document.getElementById('ptsWrap');
+      const durWrap = document.getElementById('durWrap');
+      if (ptsWrap) ptsWrap.style.display = isVideo ? 'none' : '';
+      if (durWrap) durWrap.style.display = isVideo ? '' : 'none';
+      if (!had) { autosave(); return; }
+      if (w.preset && !(w.preset.copies && w.preset.copies[w.plat])) w.preset = null;
+      Store.kvGet('materials', {}).then((m) => {
+        if (!w.preset) w.result = CopyGen.generate({ topic: w.topic, platform: w.plat, points: w.pts, duration: w.duration, materials: m });
+        renderResult();
+        autosave();
+      });
     },
 
     pickPts(el) {
       document.querySelectorAll('#ptsRow .chip').forEach((c) => c.classList.remove('active'));
       el.classList.add('active');
       App.state.write.pts = Number(el.dataset.key);
+      autosave();
+    },
+
+    pickDuration(el) {
+      document.querySelectorAll('#durRow .chip').forEach((c) => c.classList.remove('active'));
+      el.classList.add('active');
+      App.state.write.duration = Number(el.dataset.key);
+      autosave();
     },
 
     pickAngle(el) {
       document.querySelectorAll('#angRow .chip').forEach((c) => c.classList.remove('active'));
       el.classList.add('active');
       App.state.write.angle = el.dataset.key;
+      autosave();
     },
 
     async doGenerate() {
@@ -434,10 +837,14 @@
       w.topic = topic.trim();
       w.preset = null;
       const mats = await Store.kvGet('materials', {});
-      w.result = CopyGen.generate({ topic: w.topic, platform: w.plat, points: w.pts, angle: w.angle || undefined, materials: mats });
+      w.result = CopyGen.generate({ topic: w.topic, platform: w.plat, points: w.pts, duration: w.duration, angle: w.angle || undefined, materials: mats });
       renderResult();
       document.getElementById('genResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      toast('写好了 · ' + w.pts + ' 条');
+      App.state.draft = null;
+      const dn = document.querySelector('.draft-note');
+      if (dn) dn.remove();
+      autosave();
+      toast('写好了 · ' + (w.plat === 'shipinhao' || w.plat === 'douyin' ? w.duration + ' 秒口播' : w.pts + ' 条'));
     },
 
     async copyOne(el) {
@@ -486,6 +893,10 @@
           { name: 'url', label: '链接（可不填）', placeholder: 'https://' },
           { name: 'views', label: '阅读量（可不填）', type: 'number', value: 0 },
           { name: 'likes', label: '赞+藏（可不填）', type: 'number', value: 0 },
+          { name: 'finish', label: '完播率 %（视频类填）', type: 'number', value: 0 },
+          { name: 'avgPlay', label: '平均播放 秒（视频类填）', type: 'number', value: 0 },
+          { name: 'fans', label: '涨粉（视频类填）', type: 'number', value: 0 },
+          { name: 'review', label: '一句话复盘', placeholder: '这条为什么行 / 为什么不行' },
         ],
         onSubmit: async (v) => {
           await Store.put('posts', { id: Store.uid(), ...v, comments: 0, createdAt: new Date().toISOString() });
@@ -675,6 +1086,10 @@
           { name: 'views', label: '阅读量', type: 'number', value: 0 },
           { name: 'likes', label: '赞+藏', type: 'number', value: 0 },
           { name: 'comments', label: '评论', type: 'number', value: 0 },
+          { name: 'finish', label: '完播率 %（视频类填）', type: 'number', value: 0 },
+          { name: 'avgPlay', label: '平均播放 秒（视频类填）', type: 'number', value: 0 },
+          { name: 'fans', label: '涨粉（视频类填）', type: 'number', value: 0 },
+          { name: 'review', label: '一句话复盘', placeholder: '这条为什么行 / 为什么不行' },
           { name: 'notes', label: '备注（蹭到热点/被限流/改了标题重发）', placeholder: '一句话记下当时发生了什么' },
         ],
         onSubmit: async (v) => {
@@ -702,6 +1117,10 @@
             { name: 'views', label: '阅读量', type: 'number', value: p.views || 0 },
             { name: 'likes', label: '赞+藏', type: 'number', value: p.likes || 0 },
             { name: 'comments', label: '评论', type: 'number', value: p.comments || 0 },
+            { name: 'finish', label: '完播率 %（视频类填）', type: 'number', value: p.finish || 0 },
+            { name: 'avgPlay', label: '平均播放 秒（视频类填）', type: 'number', value: p.avgPlay || 0 },
+            { name: 'fans', label: '涨粉（视频类填）', type: 'number', value: p.fans || 0 },
+            { name: 'review', label: '一句话复盘', placeholder: '这条为什么行 / 为什么不行' },
             { name: 'notes', label: '备注' },
           ],
           onSubmit: async (v) => {
@@ -954,9 +1373,18 @@
     exportMd() { Backup.exportMarkdown().then(() => toast('Markdown 已下载')); },
     importAll() { document.getElementById('fileInput').click(); },
 
+    async petToggle() {
+      const saved = await Store.kvGet('pet.on', null);
+      const on = saved === null ? false : !saved;
+      await Store.kvSet('pet.on', on);
+      if (window.Pet) window.Pet.apply(on);
+      go(App.state.view, App.state.params, true);
+      toast(on ? '萌宠回来啦 🐾' : '萌宠去睡觉了');
+    },
+
     clearAll() {
       confirmBox('会清空所有文章、日记、计划、记录，且无法恢复。建议先导出备份。确定要清空吗？', async () => {
-        for (const s of ['docs', 'praise', 'soul', 'plans', 'books', 'skills', 'posts', 'favs']) await Store.clear(s);
+        for (const s of ['docs', 'praise', 'soul', 'plans', 'books', 'skills', 'posts', 'favs', 'topics', 'reminders']) await Store.clear(s);
         toast('已清空');
         go('settings');
       });
@@ -1027,11 +1455,28 @@
   /* ---------- 启动 ---------- */
   async function boot() {
     const d = new Date();
-    document.getElementById('brandDate').textContent = `${d.getMonth() + 1}月${d.getDate()}日 · 星期${'日一二三四五六'[d.getDay()]}`;
+    const almanac = window.Almanac ? window.Almanac.forDate(todayStr()) : null;
+    document.getElementById('brandDate').innerHTML =
+      `${d.getMonth() + 1}月${d.getDate()}日 · 周${'日一二三四五六'[d.getDay()]}` +
+      (almanac && almanac.lunar ? `<br>农历${almanac.lunar}` : '') +
+      (almanac && almanac.tags.length ? ` · ${almanac.tags.map((t) => t.name).join('/')}` : '');
 
     const [daily, hot] = await Promise.all([loadDaily(), loadHot(false)]);
     App.state.daily = daily;
     App.state.hot = hot;
+
+    // 上次没写完的稿子：下次打开自动接着写
+    try {
+      const draft = await Store.kvGet('draft', null);
+      if (draft && (draft.topic || draft.result)) {
+        Object.assign(App.state.write, {
+          plat: draft.plat || 'gongzhonghao', pts: draft.pts || 5, angle: draft.angle || '',
+          duration: draft.duration || 60, topic: draft.topic || '',
+          result: draft.result || null, preset: draft.preset || null,
+        });
+        App.state.draft = draft;
+      }
+    } catch (e) { /* 草稿读不到就跳过 */ }
 
     // daily.json 不是今天的（云端/离线时常见）→ 用今天的真实热榜现场合成选题，不让首页空着
     const today = todayStr();
@@ -1044,6 +1489,10 @@
     const hash = (location.hash || '#home').slice(1);
     const view = TITLES[hash] ? hash : 'home';
     await go(view, {}, true);
+
+    startReminderTicker();
+    bootReminderNotice().catch(() => {});
+    if (window.Pet) { window.Pet.mount(); window.Pet.setPage(App.state.view, App.state.params); }
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register('sw.js').then((reg) => {
@@ -1066,6 +1515,7 @@
 
   window.App = App;
   App.go = go;
+  App.checkReminders = checkReminders;
   App.modal = modal;
   window.toast = toast;
   window.copyText = copyText;
